@@ -1,0 +1,458 @@
+---
+title: "HSC.dev_da_mcScale_monaLisa"
+---
+
+- Run `HSC.dev_da_mcScale.R` first
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.dev_da_mcScale_monaLisa"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+# plot
+library(ggsci)
+library(RColorBrewer)
+library(scales)
+library(ComplexHeatmap)
+library(pheatmap)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggpubr)
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+
+# TF
+library(SummarizedExperiment)
+library(monaLisa)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(JASPAR2024)
+library(TFBSTools)
+
+# peak anno
+library(ChIPseeker)
+library(org.Hs.eg.db)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+txdb <- loadDb(here::here("data/cellranger-2020-A-2.0.0.txdb"))
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+DA res dir
+
+```{r}
+da_res_dir <- "HSC.dev_da_lmm_mc_scale"
+```
+
+All peaks
+
+```{r}
+peak_tested <- readPeakFile(here::here("output", da_res_dir, "HSC_dev_da_lmm.peak_tested.bed"))
+peak_all <- readPeakFile("/work/DevM_analysis/04.regulome/data/archr_48FL/PeakBED/celltype/HSC.bed")
+```
+
+metacell LMM
+
+```{r}
+df_de_ln <- readRDS(here::here("output", da_res_dir, "HSC_dev_da_lmm_df.rds"))
+df_de_ln <- df_de_ln[df_de_ln$ltsr > 0.9,]
+table(ifelse(df_de_ln$beta > 0, "up", "dn"))
+```
+
+Motifs: jaspar 2024
+
+```{r}
+pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
+```
+
+## monaLisa
+
+prepare data
+
+```{r}
+# DA peak GRanges
+df <- df_de_ln |> 
+  separate("gene", c("chr", "start", "end"))
+peak_da <- makeGRangesFromDataFrame(df, keep.extra.columns = TRUE)
+
+# peak seqs
+peak_seq <- getSeq(BSgenome.Hsapiens.UCSC.hg38, peak_da)
+summary(width(peak_seq))
+```
+
+Anno peaks
+
+```{r eval=FALSE}
+peak_da_anno <- annotatePeak(peak_da,
+                            level = "gene",
+                            TxDb=txdb, tssRegion=c(-1000, 1000),
+                            annoDb="org.Hs.eg.db", flankDistance = 1000,
+                            addFlankGeneInfo=T,
+                            verbose=FALSE)
+saveRDS(peak_da_anno, file = here::here("output", DOCNAME, "peak_da_anno.rds"))
+```
+
+### bin
+
+distribution
+
+```{r fig.width=10, fig.height=8}
+df |> 
+  ggplot(aes(x = beta)) +
+  geom_histogram(bins = 100, color = "white") +
+  scale_y_continuous(expand = c(0, 0)) +
+  #scale_x_continuous(breaks = seq(-0.05, 0.06, 0.01)) +
+  labs(x = "Change of chromatin accessibility", y = "Number of peaks")
+```
+
+Bin genomic regions
+
+```{r}
+bins <- bin(x = peak_da$beta, binmode = "equalN", nElement = 1000, minAbsX = NULL)
+table(bins)
+```
+
+save bins
+
+```{r}
+df$bin <- bins
+df$peak <- paste(df$chr, df$start, df$end, sep = "-")
+df |> 
+  write_csv(here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_bins.csv"))
+```
+
+beta distribution
+
+```{r fig.width=10, fig.height=8}
+plotBinDensity(peak_da$beta, bins, legend = "topright")
+```
+
+```{r fig.width=6, fig.height=6}
+plotBinDiagnostics(seqs = peak_seq, bins = bins, aspect = "GCfrac")
+```
+
+```{r fig.width=6, fig.height=6}
+plotBinDiagnostics(seqs = peak_seq, bins = bins, aspect = "dinucfreq")
+```
+
+### enrich
+
+```{r eval=FALSE}
+se <- calcBinnedMotifEnrR(seqs = peak_seq, bins = bins, pwmL = pwms)
+se
+
+saveRDS(se, file = here::here("output", DOCNAME, "se.rds"))
+```
+
+```{r}
+se <- readRDS(here::here("output", DOCNAME, "se.rds"))
+se
+assay(se, "negLog10Padj")[1:5, 1:3]
+```
+
+sig. ones
+
+```{r fig.width=8, fig.height=10}
+# select strongly enriched motifs
+# in any bin except the “zero” bin
+sel <- apply(
+  assay(se, "negLog10Padj"), 1, 
+  function(x) max(abs(x), 0, na.rm = TRUE)) > 4.0
+sum(sel)
+
+seSel <- se[sel, ]
+# save
+saveRDS(seSel, file = here::here("output", DOCNAME, "seSel.rds"))
+```
+
+to df
+
+```{r eval=FALSE}
+# to data.frame
+df1 <- assay(seSel, "log2enr") |> 
+  as.data.frame()
+colnames(df1) <- paste0("log2enr_bin", colnames(df1))
+df2 <- assay(seSel, "negLog10Padj") |> 
+  as.data.frame()
+colnames(df2) <- paste0("negLog10Padj_bin", colnames(df2))
+
+# combine
+res_df <- do.call(cbind, unlist(Map(list, as.data.frame(df1), as.data.frame(df2)), recursive = FALSE))
+colnames(res_df) <- as.vector(rbind(colnames(df1), colnames(df2)))
+res_df <- as.data.frame(res_df)
+
+# add motif_id and motif_names
+res_df$motif_id <- as.data.frame(rowData(seSel))$motif.id
+res_df$motif_name <- as.data.frame(rowData(seSel))$motif.name
+res_df <- res_df |> 
+  dplyr::select(motif_id, motif_name, everything())
+
+res_df |> 
+  write_tsv(file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.tsv"))
+saveRDS(res_df, file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.rds"))
+```
+
+```{r fig.width=8, fig.height=10}
+# plot
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"),
+                  #maxEnr = 2,
+                  #maxSig = NULL,
+                  width = 2, cluster = TRUE, 
+                  show_motif_GC = TRUE)
+```
+
+maxSig = 10
+
+```{r fig.width=8, fig.height=10}
+# plot
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"),
+                  maxEnr = 2, maxSig = 10,
+                  width = 2, cluster = TRUE, 
+                  show_motif_GC = TRUE)
+```
+
+motif similarity
+
+```{r}
+SimMatSel <- motifSimilarity(rowData(seSel)$motif.pfm)
+range(SimMatSel)
+```
+
+seqlogo, motif similarity
+
+```{r fig.width=10, fig.height=10}
+# create hclust object, similarity defined by 1 - Pearson correlation
+hcl <- hclust(as.dist(1 - SimMatSel), method = "average")
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = NULL,
+                  show_dendrogram = TRUE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1.5)
+```
+
+## GC content? {.tabset}
+
+### the highest beta
+
+```{r}
+# final bin
+last_bin_idx <- length(levels(bins))
+levels(bins)[last_bin_idx]
+sel.bin_last <- assay(se, "negLog10Padj")[, last_bin_idx] > 4.0
+sum(sel.bin_last, na.rm = TRUE)
+```
+
+check if GC% affect the motif enrichment
+
+```{r warning=TRUE, message=TRUE, eval=FALSE}
+peak_seq.bin_last <- peak_seq[bins == levels(bins)[last_bin_idx]]
+length(peak_seq.bin_last)
+
+se.bin_last <- calcBinnedMotifEnrR(seqs = peak_seq.bin_last,
+                           pwmL = pwms[rownames(seSel)],
+                           background = "genome",
+                           genome = BSgenome.Hsapiens.UCSC.hg38,
+                           genome.regions = peak_all, # sample from all HSC peaks
+                           genome.oversample = 2, 
+                           BPPARAM = BiocParallel::SerialParam(RNGseed = 42),
+                           verbose = TRUE)
+
+saveRDS(se.bin_last, file = here::here("output", DOCNAME, "se.bin_last.rds"))
+```
+
+```{r fig.width=9, fig.height=10}
+se.bin_last <- readRDS(here::here("output", DOCNAME, "se.bin_last.rds"))
+
+sel.bin_last <- assay(se.bin_last, "negLog10Padj")[, 1] > 4.0
+sum(sel.bin_last)
+
+plotMotifHeatmaps(x = se.bin_last[sel.bin_last,],
+                  which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 1.8, maxEnr = 2, maxSig = 10,
+                  show_seqlogo = TRUE, width.seqlogo = 2)
+```
+
+comparison of log2 motif enrichments between the `background = "otherBins"` and `background = "genome"` analyses
+
+```{r fig.width=6, fig.height=6}
+cols <- rep("gray", nrow(se.bin_last))
+cols[grep("FOS", rowData(se.bin_last)$motif.name)] <- "#DF536B"
+cols[grep("RFX", rowData(se.bin_last)$motif.name)] <- "#61D04F"
+par(mar = c(5, 5, 2, 2) + .1, mgp = c(1.75, 0.5, 0), cex = 1.25)
+plot(assay(seSel, "log2enr")[,10],
+     assay(se.bin_last, "log2enr")[,1],
+     col = cols, pch = 20, asp = 1,
+     xlab = "Versus other bins (log2 enr)",
+     ylab = "Versus genome (log2 enr)")
+legend("topleft", c("FOS family", "RFX family", "other"), pch = 20, bty = "n",
+       col = c("#DF536B", "#61D04F", "gray"))
+abline(a = 0, b = 1)
+abline(h = 0, lty = 3)
+abline(v = 0, lty = 3)
+```
+
+### the lowest beta
+
+```{r}
+# first bin
+first_bin_idx <- 1
+levels(bins)[first_bin_idx]
+sel.bin_first <- assay(se, "negLog10Padj")[, first_bin_idx] > 4.0
+sum(sel.bin_first, na.rm = TRUE)
+```
+
+check if %GC affect the motif enrichment
+
+```{r warning=TRUE, message=TRUE, eval=FALSE}
+peak_seq.bin_first <- peak_seq[bins == levels(bins)[first_bin_idx]]
+length(peak_seq.bin_first)
+
+se.bin_first <- calcBinnedMotifEnrR(seqs = peak_seq.bin_first,
+                           pwmL = pwms[rownames(seSel)],
+                           background = "genome",
+                           genome = BSgenome.Hsapiens.UCSC.hg38,
+                           genome.regions = peak_all, # sample from all HSC peaks
+                           genome.oversample = 2, 
+                           BPPARAM = BiocParallel::SerialParam(RNGseed = 42),
+                           verbose = TRUE)
+
+saveRDS(se.bin_first, file = here::here("output", DOCNAME, "se.bin_first.rds"))
+```
+
+```{r fig.width=9, fig.height=3}
+se.bin_first <- readRDS(here::here("output", DOCNAME, "se.bin_first.rds"))
+
+sel.bin_first <- assay(se.bin_first, "negLog10Padj")[, 1] > 4.0
+sum(sel.bin_first)
+
+plotMotifHeatmaps(x = se.bin_first[sel.bin_first,],
+                  which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 1.8, maxEnr = 2, maxSig = 10,
+                  show_seqlogo = TRUE, width.seqlogo = 2)
+```
+
+## TF expression?
+
+```{r}
+# srat
+library(Seurat)
+
+srat <- qs::qread(here::here("output", "HSC.dev_de_lemur", "srat_rna.qs"))
+srat
+```
+
+Get TF gene symbols
+
+```{r eval=FALSE}
+# Combine into a data frame
+df_motif2gene <- data.frame(motif_id = names(seSel), tf_name = toupper(rowData(seSel)$motif.name),
+                            stringsAsFactors = FALSE) |> 
+  separate(tf_name, c("tf1", "tf2"), sep = "::") |> 
+  mutate(tf2 = case_when(
+    is.na(tf2) ~ tf1,
+    TRUE ~ tf2
+  )) |> 
+  mutate(
+    tf1_in_srat = ifelse(tf1 %in% rownames(srat), TRUE, FALSE),
+    tf2_in_srat = ifelse(tf2 %in% rownames(srat), TRUE, FALSE)
+  ) |> 
+  mutate(tf_in_srat = tf1_in_srat & tf2_in_srat)
+df_motif2gene |> 
+  DT::datatable()
+
+saveRDS(df_motif2gene, file = here::here("output", DOCNAME, "df_motif2gene.rds"))
+```
+
+```{r}
+df_motif2gene <- readRDS(here::here("output", DOCNAME, "df_motif2gene.rds"))
+tf_genes <- unique(c(df_motif2gene$tf1, df_motif2gene$tf2))
+length(tf_genes)
+sort(tf_genes)
+```
+
+HSC DEGs
+
+```{r}
+df_de <- readRDS(here::here("output", "HSC.dev_de_lmm", "HSC_lmm_de_time_df.rds"))
+
+deg_lst <- list(
+  LMM_up = df_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  LMM_dn = df_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+```
+
+```{r fig.width=8, fig.height=8}
+p <- DotPlot(srat, features = sort(tf_genes, decreasing = T), group.by = "PCW", scale = TRUE) +
+  coord_flip() +
+  labs(x = NULL, y = NULL, title = "TF expression")
+
+# Extract plot data
+plot_data <- p$data
+
+plot_data <- plot_data |> 
+  mutate(features.group = case_when(
+    features.plot %in% deg_lst$LMM_up ~ "Up",
+    features.plot %in% deg_lst$LMM_dn ~ "Dn",
+    TRUE ~ "NotSig"
+  ))
+
+# Define colors for each group
+group_colors <- c("Up" = "red", "Dn" = "blue", "NotSig" = "gray")
+gene_color_vector <- setNames(group_colors[plot_data$features.group], plot_data$features.plot)
+
+p +
+  theme(axis.text.y = element_text(colour = gene_color_vector[levels(plot_data$features.plot)],
+                                   face = "bold"))
+```
+
+## Session info

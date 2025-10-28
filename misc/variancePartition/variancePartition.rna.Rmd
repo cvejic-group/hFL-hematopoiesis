@@ -1,0 +1,160 @@
+---
+title: "variancePartition.rna"
+---
+
+- Run `code/variancePartition.rna.R` first
+
+```{r knitr, include = FALSE}
+DOCNAME <- "variancePartition.rna"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r}
+library(tidyverse)
+
+# plot
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggpubr)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# model
+library(variancePartition)
+
+# ORA
+library(clusterProfiler)
+library(org.Hs.eg.db)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+#source(here::here("utils/color.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+```
+
+## Pseudo-bulk
+
+```{r}
+varPart <- readRDS(here::here("output", DOCNAME, "PBvarPart.rds"))
+vp <- readRDS(here::here("output", DOCNAME, "PBvp.rds"))
+```
+
+show some genes
+
+```{r fig.width=6, fig.height=8}
+# Bar plot of variance fractions for the first 10 genes
+plotPercentBars(vp[1:20,]) +
+  scale_fill_jco()
+```
+
+
+```{r fig.width=5, fig.height=4}
+# violin plot of contribution of each variable to total variance
+plotVarPart(vp) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "varPartRNA.covariate_contribution.pdf"),
+  width = 5, height = 4
+)
+```
+
+### Top genes based on variance explained by PCW
+
+top 500 genes
+
+```{r eval=FALSE}
+top_500_names <- rownames(head(varPart[order(varPart$PCWsca, decreasing = TRUE), ], 500))
+
+top_500_ids <- top_500_names |> UpdateSymbolList(verbose = FALSE) |> 
+    bitr(fromType="SYMBOL", toType=c("ENTREZID"), OrgDb="org.Hs.eg.db") |> 
+    pull(ENTREZID)
+lengths(top_500_ids)
+saveRDS(top_500_ids, file = here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.rds"))
+
+# ORA, KEGG
+ck <- enrichKEGG(top_500_ids, organism = "hsa", pvalueCutoff = 0.05)
+ck <- setReadable(ck, 'org.Hs.eg.db', keyType = "ENTREZID")
+saveRDS(ck, file = here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_KEGG.rds"))
+as.data.frame(ck) |> 
+  write_tsv(here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_KEGG.tsv"))
+
+# ORA, GO-BP
+cg.BP <- enrichGO(top_500_ids, OrgDb = org.Hs.eg.db, ont = "BP", pAdjustMethod = "BH",
+                 pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = T)
+saveRDS(cg.BP, file = here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_GOBP.rds"))
+as.data.frame(cg.BP) |> 
+  write_tsv(here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_GOBP.tsv"))
+```
+
+KEGG
+
+```{r , fig.width=8, fig.height=6}
+ck <- readRDS(here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_KEGG.rds"))
+dotplot(ck, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+```
+
+GO-BP
+
+```{r , fig.width=8, fig.height=6}
+cg.BP <- readRDS(here::here("output", DOCNAME, "varPart_top500_PCWsca_gene.ORA_GOBP.rds"))
+dotplot(cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40))
+```
+
+simplify
+
+```{r , fig.width=8, fig.height=6}
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+## Session info

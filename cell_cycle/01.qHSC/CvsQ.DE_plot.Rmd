@@ -1,0 +1,454 @@
+---
+title: "HSC.CvsQ.plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.CvsQ.plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# ORA
+library(clusterProfiler)
+library(fgsea)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+Load
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/05.cellcycle/00.Identify_G0_HSCs/data/FLHSC_withG0label_byBMgset.rds")
+srat$G0_label <- factor(srat$G0_label,levels = c('G0','G1','S','G2M'))
+table(srat$G0_label, useNA = "ifany")
+```
+
+```{r}
+# wnn
+latent <- read_csv("/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_umap.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["wnn.umap"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "wnnumap_", assay = DefaultAssay(srat))
+# mvi
+latent <- read_csv("/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_mvi_umap.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["mvi.umap"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "mviumap_", assay = DefaultAssay(srat))
+
+# fa-paga
+latent <- read_csv("/work/DevM_analysis/03.trajectory/diffusion_mvi/data/FL_HSC_diffusion_fa_paga.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["fa.paga"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "fapaga_", assay = DefaultAssay(srat))
+srat
+```
+
+DE by LMM
+
+```{r}
+de_lmm <- readRDS(here::here("output", "HSC.CvsQ.DE", "G0_de.by_lmm.res_df.rds"))
+df_de_sig <- de_lmm[de_lmm$ltsr > 0.9,]
+table(ifelse(df_de_sig$beta > 0, "up", "dn"))
+```
+
+qHSC signatures
+
+```{r}
+quiescent_hsc_signatures <- readRDS(here::here("data/quiescent_hsc_signatures.rds"))
+lengths(quiescent_hsc_signatures)
+```
+
+## UMAP
+
+```{r fig.width=2.5, fig.height=2.3}
+cells.highlight <- srat@meta.data |>
+  rownames_to_column("barcode") |>
+  filter(G0_label == "G0") |>
+  pull(barcode)
+
+p1 <- DimPlot(srat, reduction = "mvi.umap", cells.highlight = cells.highlight, sizes.highlight = .3) +
+  NoLegend() +
+  small_axis(label = "mviUMAP", fix_coord = FALSE)
+p1
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.umap_highlight_G0.pdf"),
+  width = 2.5, height = 2.3
+)
+```
+
+## Dotplot
+
+```{r fig.width=2.5, fig.height=5}
+q_markers <- c('HLF','MECOM', 'ANGPT1','HMGA2','MSI2','MEIS1', 'HIF1A','MLLT3','CTNNB1','ITGA6','CUX1','ATP2B1','PROM1','PBX1','RORA','AHR', 'TIPARP','NECTIN2','NFE2L2',"TEK",'CLEC9A','HOXA9','GPRC5C','TFEB','VNN2','ID1', 'ID3', 'HES1','RGCC', "ZNHIT1", "HOXB5",'PRMT1')
+c_markers <- c('MYC',"MYCN",'CDK6','HELLS','NASP','MKI67','TOP2A','CENPF')
+
+p <- DotPlot(srat, features = c(rev(c_markers), rev(q_markers)), group.by = 'G0_label',
+             dot.scale = 3) +
+  scale_y_discrete(position = "right") +
+  coord_flip() +
+  labs(y='CC Phases', x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.dotplot_known_markers.pdf"),
+  width = 2.5, height = 5
+)
+```
+
+```{r fig.width=2.5, fig.height=5}
+p <- DotPlot(srat, features = c(rev(c_markers), rev(q_markers)), group.by = 'G0_label',
+             dot.scale = 3, scale = FALSE) +
+  scale_y_discrete(position = "right") +
+  coord_flip() +
+  labs(y='CC Phases', x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+```
+
+## CDK
+
+CDK6/Cyclin D
+
+```{r, fig.width=6, fig.height=4}
+VlnPlot(srat, features = c("ITGA6", "THY1", "CDK6", "CCND1", "CCND3", "CDK4"),
+        group.by = "G0_label", pt.size = 0, ncol = 3) +
+  NoLegend()
+```
+
+```{r}
+DotPlot(srat, features = c("ITGA6", "THY1", "CDK6", "CCND1", "CCND3", "CDK4"), group.by = "PCW_new")
+```
+
+## Composition
+
+```{r fig.width=3, fig.height=5}
+d4p <- srat@meta.data |> filter(PCW != 'Mixed') |> 
+  group_by(PCW, G0_label) |> 
+  summarize(count = n()) |>
+  mutate(prop = count / sum(count) * 100)
+
+p <- d4p |> 
+  mutate(PCW = factor(PCW, levels = as.character(18:5))) |> 
+  ggplot(aes(x = PCW, y = prop, fill = G0_label)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c('G0'='#984EA3','G1'='#1f77b4','S'='#ff7f0e','G2M'='#2ca02c')) +
+  coord_flip() +
+  labs(x = "PCW", y = "Percentage (%)") +
+  theme(panel.background = element_blank(),
+        panel.border = element_rect(fill = NA, color = 'black', linewidth = 0.3),
+        legend.key = element_rect(fill = NA,linewidth = 0.3)) +
+  labs(fill = "CC Phase")
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.composition_barplot.pdf"),
+  width = 3, height = 5
+)
+```
+
+## DEGs {.tabset}
+
+### Cmp. with previous signatures
+
+rank by beta
+
+```{r fig.width=4, fig.height=3}
+rank_glst <- setNames(de_lmm$beta, de_lmm$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_glst,
+                  minSize  = 15,
+                  maxSize  = 500)
+p <- plotGseaTable(quiescent_hsc_signatures, rank_glst, fgseaRes, 
+              gseaParam=0.5,
+              pathwayLabelStyle=list(size = 8),
+              valueStyle = list(size = 8),
+              headerLabelStyle = list(size = 8))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.DEG_cmp_previous_qHSC_signatures.pdf"),
+  width = 4, height = 3
+)
+```
+
+### heatmap of known
+
+```{r fig.width=1.35, fig.height=6}
+# beta
+mat <- as.matrix(df_de_sig[,"beta"])
+colnames(mat)[1] <- "beta"
+rownames(mat) <- df_de_sig$gene
+
+# color
+range(mat[,1])
+quantile(mat[,1], c(0.01, 0.05, 0.1, 0.5, 0.8, 0.9, 0.95, 0.99), na.rm=TRUE)
+col_fun = circlize::colorRamp2(c(-0.2, 0, 0.32), c("blue", "white", "red"))
+
+# label location
+marker_2_lab <- c(
+    # up
+    "MECOM", "HLF", "PRDM16", "MLLT3",
+    "CLEC9A", "EMCN", "LMNA", "MYCT1",
+    "HIF1A", "MEIS1", "ITGA6",
+    "HLA-DOA", "HLA-DRB1", "TEK", "FOXO1",
+    # dn
+    "CDK6", "MYC", "MYCN", "EZH2", "ITGA9"
+)
+marker_2_lab = sapply(marker_2_lab, function(x){which(rownames(mat) == x)}, simplify = T)
+ha = rowAnnotation(foo = anno_mark(at = marker_2_lab,
+                                   labels = names(marker_2_lab),
+                                   labels_gp = gpar(fontsize = 6)))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(#direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    #title_position = "leftcenter",
+                                    grid_height = unit(2, "mm"),
+                                    grid_width = unit(2, "mm"))
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.beta = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "right")))
+p.beta
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.DEG_heatmap_show_known.pdf"),
+  width = 1.35, height = 6
+)
+```
+
+### heatmap of ATPase
+
+```{r fig.width=3.5, fig.height=6}
+# genes to highlight
+gene_df <- data.frame(
+  gene = c("NKAIN2",
+           "ATP10D", "ATP8A1", "ATP13A3", "ATP11A",
+            "ATP6V0A1",
+            "MT-ATP8", "ATP5F1B", "ATP5MG", "ATP5F1A", "ATP5MC2", "ATP5MC3"),
+  gene_group = c(rep("P-type ATPase Interacting", 1),
+                 rep("P-type ATPase", 4),
+                 rep("V-type ATPase", 1),
+                 rep("F-type ATPase", 6)
+                 )
+)
+gene_df$gene_group <- factor(gene_df$gene_group, levels = c("P-type ATPase Interacting",
+                                                            "P-type ATPase", "V-type ATPase",
+                                                            "F-type ATPase"))
+# gene group colors
+gene_group_levels <- levels(gene_df$gene_group)
+# RColorBrewer
+#group_colors <- setNames(brewer.pal(length(gene_group_levels), "Set2"), gene_group_levels)
+# ggsci
+group_colors <- setNames(pal_nejm()(length(gene_group_levels)), gene_group_levels)
+gene_df$gene_color <- group_colors[as.character(gene_df$gene_group)]
+
+# label location
+gth = sapply(gene_df$gene, function(x){which(rownames(mat) == x)}, simplify = T)
+
+# rowname anno
+ha = rowAnnotation(foo = anno_mark(at = gth, labels = names(gth),
+                                   labels_gp = gpar(fontsize = 10,
+                                                    col = gene_df$gene_color,
+                                                    fontface = "bold"),
+                                   link_gp = gpar(col = gene_df$gene_color)))
+
+# legend for gene groups
+gene_group_legend <- Legend(
+  title = "Group",
+  labels = names(group_colors),
+  legend_gp = gpar(fill = group_colors),
+  labels_gp = gpar(fontsize = 10),
+  title_gp = gpar(fontsize = 10),
+  #column_gap = unit(2, "mm"),
+  row_gap = unit(2, "mm")
+)
+pd = packLegend(gene_group_legend, max_width = unit(5.5, "cm"))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        #column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    title_position = "topcenter",
+                                    grid_height = unit(1.5, "mm"),
+                                    grid_width = unit(1.5, "mm")),
+        width = unit(0.5, "cm")
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.ht = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "top", annotation_legend_list = list(pd))))
+p.ht
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.DEG_heatmap_show_ATPase.pdf"),
+  width = 3.5, height = 6
+)
+```
+
+### ORA
+
+```{r}
+out_prefix <- "G0_de.by_lmm"
+cg.BP <- readRDS(here::here("output", "HSC.CvsQ.DE", paste0(out_prefix, ".ORA_GOBP.rds")))
+s_cg.BP <- simplify(cg.BP, cutoff = 0.5)
+```
+
+dotplot, simiplified GO-BP
+
+```{r fig.width=3.2, fig.height=6}
+p <- dotplot(s_cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  scale_x_discrete(labels = c("Up-regulated", "Down-regulated")) +
+  labs(x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        #axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.dev_de_plot.ORA_GO-BP.pdf"),
+  width = 3.2, height = 6
+)
+```
+
+## Olp with dev. diff. genes
+
+dev deg
+
+```{r}
+df_dev_de <- readRDS(here::here("output", "HSC.dev_de_lmm", "HSC_lmm_de_time_df.rds"))
+
+dev_deg_lst <- list(
+  Dev.up = df_dev_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  Dev.dn = df_dev_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+lengths(dev_deg_lst)
+```
+
+QvsC deg
+
+```{r}
+df_qvsc_de <- readRDS(here::here("output", "HSC.CvsQ.DE", "G0_de.by_lmm.res_df.rds"))
+
+qvsc_deg_lst <- list(
+  qHSC.up = df_qvsc_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  qHSC.dn = df_qvsc_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+lengths(qvsc_deg_lst)
+```
+
+```{r fig.width=4, fig.height=4}
+a <- c(dev_deg_lst, qvsc_deg_lst)
+p <- ggVennDiagram(a, force_upset = TRUE, nintersects = 8, order.set.by = "none", relative_width = .4)
+
+pdf(here::here("output", DOCNAME, "DEGs_olp_of_QvsC_and_DevDiff.pdf"),
+  width = 4, height = 4
+)
+p
+invisible(dev.off())
+```
+
+## Session info

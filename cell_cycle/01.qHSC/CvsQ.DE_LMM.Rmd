@@ -1,0 +1,522 @@
+---
+title: "HSC.CvsQ.DE_LMM"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.CvsQ.DE"
+#dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Load libs
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+library(ggvenn)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(viridis)
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# gsea
+library(fgsea)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Set up
+
+DE by LMM
+
+```{r}
+de_lmm <- readRDS(here::here("output", DOCNAME, "G0_de.by_lmm.res_df.rds"))
+df_de_sig <- de_lmm[de_lmm$ltsr > 0.9,]
+table(ifelse(df_de_sig$beta > 0, "up", "dn"))
+```
+
+qHSC signatures
+
+```{r}
+quiescent_hsc_signatures <- readRDS(here::here("data/quiescent_hsc_signatures.rds"))
+lengths(quiescent_hsc_signatures)
+```
+
+## Cmp. with previous signatures {.tabset}
+
+rank by beta
+
+```{r fig.width=8, fig.height=4}
+rank_glst <- setNames(de_lmm$beta, de_lmm$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_glst,
+                  minSize  = 15,
+                  maxSize  = 500)
+plotGseaTable(quiescent_hsc_signatures, rank_glst, fgseaRes, 
+              gseaParam=0.5)
+```
+
+## DE
+
+LTSR > 0.9
+
+```{r}
+DT::datatable(df_de_sig, rownames = FALSE)
+```
+
+## Heatmap {.tabset}
+
+### known
+
+```{r  fig.width=1.4, fig.height=6}
+# beta
+mat <- as.matrix(df_de_sig[,"beta"])
+colnames(mat)[1] <- "beta"
+rownames(mat) <- df_de_sig$gene
+
+# color
+range(mat[,1])
+quantile(mat[,1], c(0.01, 0.05, 0.1, 0.5, 0.8, 0.9, 0.95, 0.99), na.rm=TRUE)
+col_fun = circlize::colorRamp2(c(-0.2, 0, 0.32), c("blue", "white", "red"))
+
+# label location
+marker_2_lab <- c(
+    # up
+    "MECOM", "HLF", "PRDM16", "MLLT3",
+    "CLEC9A", "EMCN", "LMNA", "MYCT1",
+    "HIF1A", "MEIS1", "ITGA6",
+    "HLA-DOA", "HLA-DRB1", "TEK", "FOXO1",
+    # dn
+    "CDK6", "MYC", "MYCN", "EZH2", "ITGA9"
+)
+marker_2_lab = sapply(marker_2_lab, function(x){which(rownames(mat) == x)}, simplify = T)
+ha = rowAnnotation(foo = anno_mark(at = marker_2_lab,
+                                   labels = names(marker_2_lab),
+                                   labels_gp = gpar(fontsize = 6)))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(#direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    #title_position = "leftcenter",
+                                    grid_height = unit(2, "mm"),
+                                    grid_width = unit(2, "mm"))
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.beta = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "right")))
+p.beta
+```
+
+### ATPase
+
+```{r fig.width=5, fig.height=6}
+# genes to highlight
+gene_df <- data.frame(
+  gene = c("NKAIN2",
+           "ATP10D", "ATP8A1", "ATP13A3", "ATP11A",
+            "ATP6V0A1",
+            "MT-ATP8", "ATP5F1B", "ATP5MG", "ATP5F1A", "ATP5MC2", "ATP5MC3"),
+  gene_group = c(rep("P-type ATPase Interacting", 1),
+                 rep("P-type ATPase", 4),
+                 rep("V-type ATPase", 1),
+                 rep("F-type ATPase", 6)
+                 )
+)
+gene_df$gene_group <- factor(gene_df$gene_group, levels = c("P-type ATPase Interacting",
+                                                            "P-type ATPase", "V-type ATPase",
+                                                            "F-type ATPase"))
+# gene group colors
+gene_group_levels <- levels(gene_df$gene_group)
+# RColorBrewer
+#group_colors <- setNames(brewer.pal(length(gene_group_levels), "Set2"), gene_group_levels)
+# ggsci
+group_colors <- setNames(pal_nejm()(length(gene_group_levels)), gene_group_levels)
+gene_df$gene_color <- group_colors[as.character(gene_df$gene_group)]
+
+# label location
+gth = sapply(gene_df$gene, function(x){which(rownames(mat) == x)}, simplify = T)
+
+# rowname anno
+ha = rowAnnotation(foo = anno_mark(at = gth, labels = names(gth),
+                                   labels_gp = gpar(fontsize = 10,
+                                                    col = gene_df$gene_color,
+                                                    fontface = "bold"),
+                                   link_gp = gpar(col = gene_df$gene_color)))
+
+# legend for gene groups
+gene_group_legend <- Legend(
+  title = "Group",
+  labels = names(group_colors),
+  legend_gp = gpar(fill = group_colors),
+  labels_gp = gpar(fontsize = 10),
+  title_gp = gpar(fontsize = 10),
+  #column_gap = unit(2, "mm"),
+  row_gap = unit(2, "mm")
+)
+pd = packLegend(gene_group_legend, max_width = unit(5.5, "cm"))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        #column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    title_position = "topcenter",
+                                    grid_height = unit(1.5, "mm"),
+                                    grid_width = unit(1.5, "mm")),
+        width = unit(0.5, "cm")
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.ht = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "top", annotation_legend_list = list(pd))))
+p.ht
+```
+
+### PI3K-Akt
+
+positive regulation of phosphatidylinositol 3-kinase/protein kinase B signal transduction
+
+```{r fig.width=1.3, fig.height=6}
+# label location
+pos_pi3k <- GOfuncR::get_anno_genes("GO:0051897")[,2]
+marker_2_lab <- intersect(rownames(mat), pos_pi3k)
+marker_2_lab = sapply(marker_2_lab, function(x){which(rownames(mat) == x)}, simplify = T)
+ha = rowAnnotation(foo = anno_mark(at = marker_2_lab,
+                                   labels = names(marker_2_lab),
+                                   labels_gp = gpar(fontsize = 6)))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(#direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    #title_position = "leftcenter",
+                                    grid_height = unit(2, "mm"),
+                                    grid_width = unit(2, "mm"))
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.pi3k_pos = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "right")))
+p.pi3k_pos
+```
+
+negative regulation of phosphatidylinositol 3-kinase/protein kinase B signal transduction
+
+```{r fig.width=1.2, fig.height=6}
+# label location
+neg_pi3k <- GOfuncR::get_anno_genes("GO:0051898")[,2]
+marker_2_lab <- intersect(rownames(mat), neg_pi3k)
+marker_2_lab = sapply(marker_2_lab, function(x){which(rownames(mat) == x)}, simplify = T)
+ha = rowAnnotation(foo = anno_mark(at = marker_2_lab,
+                                   labels = names(marker_2_lab),
+                                   labels_gp = gpar(fontsize = 6)))
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        right_annotation = ha,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(#direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    #title_position = "leftcenter",
+                                    grid_height = unit(2, "mm"),
+                                    grid_width = unit(2, "mm"))
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.pi3k_neg = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "right")))
+p.pi3k_neg
+```
+
+## GSEA {.tabset}
+
+rank by beta
+
+```{r eval=FALSE}
+out_prefix <- "G0_de.by_lmm"
+
+# load gmt
+h_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/h.all.v2024.1.Hs.symbols.gmt')
+c2cp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt')
+c5gobp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c5.go.bp.v2024.1.Hs.symbols.gmt')
+
+# update the lst? no
+rank_glst <- setNames(de_lmm$beta, de_lmm$gene)
+saveRDS(rank_glst, file = here::here("output", DOCNAME, paste0(out_prefix, ".geneRank_4_GSEA.rds")))
+
+# Hallmark
+set.seed(1)
+em <- GSEA(rank_glst, TERM2GENE = h_t2g, eps = 0)
+saveRDS(em, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+as.data.frame(em) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.tsv")))
+
+# KEGG
+set.seed(1)
+em2 <- GSEA(rank_glst, TERM2GENE = c2cp_t2g, eps = 0)
+saveRDS(em2, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+as.data.frame(em2) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.tsv")))
+
+# GO-BP
+set.seed(1)
+em3 <- GSEA(rank_glst, TERM2GENE = c5gobp_t2g, eps = 0)
+saveRDS(em3, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+as.data.frame(em3) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.tsv")))
+```
+
+### Hallmark
+
+```{r fig.width=6, fig.height=6}
+out_prefix <- "G0_de.by_lmm"
+em <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+
+as.data.frame(em) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em, top_n = 5)
+```
+
+```{r fig.width=6, fig.height=4}
+plot_top_gsea_dot(er = em)
+```
+
+### KEGG
+
+```{r fig.width=8, fig.height=6}
+em2 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+
+as.data.frame(em2) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em2)
+```
+
+```{r fig.width=10, fig.height=4}
+plot_top_gsea_dot(er = em2)
+```
+
+### GO-BP
+
+```{r fig.width=8, fig.height=6}
+em3 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+
+as.data.frame(em3) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em3)
+```
+
+```{r fig.width=10, fig.height=4}
+plot_top_gsea_dot(er = em3)
+```
+
+## ORA {.tabset}
+
+```{r eval=FALSE}
+out_prefix <- "G0_de.by_lmm"
+
+compareList <- list(
+  # 7.64% of input gene IDs are fail to map
+  up = df_de_sig |> filter(beta > 0) |> pull(gene) |> UpdateSymbolList(verbose = FALSE) |> 
+    bitr(fromType="SYMBOL", toType=c("ENTREZID"), OrgDb="org.Hs.eg.db") |> 
+    pull(ENTREZID),
+  # 3.33% of input gene IDs are fail to map
+  dn = df_de_sig |> filter(beta < 0) |> pull(gene) |> UpdateSymbolList(verbose = FALSE) |> 
+    bitr(fromType="SYMBOL", toType=c("ENTREZID"), OrgDb="org.Hs.eg.db") |> 
+    pull(ENTREZID)
+)
+saveRDS(compareList, file = here::here("output", DOCNAME, paste0(out_prefix, ".compareList_4_ora.rds")))
+
+# ORA, KEGG
+ck = compareCluster(compareList, fun = "enrichKEGG", organism = "hsa", pvalueCutoff = 0.05)
+ck <- setReadable(ck, 'org.Hs.eg.db', keyType = "ENTREZID")
+saveRDS(ck, file = here::here("output", DOCNAME, paste0(out_prefix, ".ORA_KEGG.rds")))
+as.data.frame(ck) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_KEGG.tsv")))
+
+# ORA, GO-BP
+cg.BP = compareCluster(compareList, fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "BP",
+                       pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = T)
+saveRDS(cg.BP, file = here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOBP.rds")))
+as.data.frame(cg.BP) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOBP.tsv")))
+
+# ORA, GO-MF
+cg.MF = compareCluster(compareList, fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "MF",
+                       pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = T)
+saveRDS(cg.MF, file = here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOMF.rds")))
+as.data.frame(cg.MF) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOMF.tsv")))
+
+# ORA, GO-CC
+cg.CC = compareCluster(compareList, fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "CC",
+                       pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = T)
+saveRDS(cg.CC, file = here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOCC.rds")))
+as.data.frame(cg.CC) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOCC.tsv")))
+```
+
+### KEGG
+
+```{r , fig.width=8, fig.height=8}
+out_prefix <- "G0_de.by_lmm"
+
+ck <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_KEGG.rds")))
+dotplot(ck, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+```
+
+PI3K-Akt
+
+```{r eval=FALSE}
+library(pathview)
+
+geneList <- c(
+  setNames(rep(1, length(compareList$up)), compareList$up),
+  setNames(rep(-1, length(compareList$dn)), compareList$dn)
+)
+# PI3K-Akt
+hsa04151 <- pathview(gene.data  = geneList,
+                     pathway.id = "hsa04151",
+                     species    = "hsa")
+
+# Cell adhesion molecules
+hsa04514 <- pathview(gene.data  = geneList,
+                     pathway.id = "hsa04514",
+                     species    = "hsa")
+
+# Focal adhesion
+hsa04510 <- pathview(gene.data  = geneList,
+                     pathway.id = "hsa04510",
+                     species    = "hsa")
+
+# FoxO signaling pathway
+hsa04068 <- pathview(gene.data  = geneList,
+                     pathway.id = "hsa04068",
+                     species    = "hsa")
+```
+
+### GO-BP
+
+```{r , fig.width=7, fig.height=8}
+cg.BP <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOBP.rds")))
+
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+### GO-MF
+
+```{r , fig.width=7, fig.height=8}
+cg.MF <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOMF.rds")))
+p <- dotplot(simplify(cg.MF, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+### GO-CC
+
+```{r , fig.width=7, fig.height=8}
+cg.CC <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".ORA_GOCC.rds")))
+p <- dotplot(simplify(cg.CC, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+## Session info

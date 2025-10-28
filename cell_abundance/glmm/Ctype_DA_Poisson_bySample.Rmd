@@ -1,0 +1,427 @@
+---
+title: "Ctype_DA_Poisson_bySample"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "Ctype_DA_Poisson_bySample"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+# plot
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggpubr)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# model
+library(lme4)
+library(numDeriv)
+library(DHARMa)
+library(lmtest)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+#source(here::here("utils/color.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source(here::here("utils/CellTypeCompositionAnalysis.R"))
+```
+
+## Set up
+
+Load cellmeta
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_PCW250401/data/FL_rna_clustered.rds")
+srat
+```
+
+Neat
+
+```{r}
+obs_tbl <- srat@meta.data |>
+  rownames_to_column("barcode")
+
+obs_tbl$PCWsca <- scale(as.integer(as.character(obs_tbl$PCW)))
+unique(obs_tbl$PCWsca)
+```
+
+```{r}
+metadata <- obs_tbl |> 
+  dplyr::select(sampleID, libraryID, donorID, Sex, PCW, PCWsca, Batch) |> 
+  distinct() |> 
+  mutate(Sex = factor(Sex, levels = c("M", "F")),
+         donorID = factor(donorID)) |> 
+  mutate(Batch = factor(Batch))
+```
+
+count table (cell number of each cell type and each sample)
+
+```{r}
+Y <- .make_count_matrix(obs_tbl, "sampleID", "anno_wnn_v51")
+dim(Y)
+```
+
+input for glmer
+
+```{r}
+input_dbl <- .make_input_for_glmer(Y = Y, metadata_tbl = metadata, colSample = "sampleID")
+head(input_dbl)
+```
+
+## Library/Donor as random effect (model 1)
+
+`Ncs ∼ PCW+(1|Celltype)+(1∣Library)+(1∣Donor)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)`
+
+- fixed effects: PCW
+- random effects
+  - (1|Celltype): models variability in the baseline abundance of each cell type
+  - (1|)
+- interactions
+  - (PCW−1∣Celltype): account for how aging affects each cell type
+  - 
+
+```{r}
+terms <- c(
+    "PCWsca",
+    sprintf("(1|%s)", c("libraryID", "donorID")),
+    sprintf("(%s-1|Celltype)", "PCWsca"),
+    sprintf("(1|%s:Celltype)", c("libraryID", "donorID"))
+  )
+formula_str <- paste(c("I(Y) ~ (1|Celltype)", terms), collapse = "+")
+f <- as.formula(formula_str)
+f
+```
+
+fit
+
+```{r eval=FALSE}
+res1 <- CellTypeCompositionAnalysis2(f = f, data = input_dbl)
+saveRDS(res1, file = here::here("output", DOCNAME, "GLMM.Library_Donor_asRandom.rds"))
+```
+
+```{r}
+res1 <- readRDS(here::here("output", DOCNAME, "GLMM.Library_Donor_asRandom.rds"))
+summary(res1$res.prop)
+```
+
+```{r fig.width=4, fig.height=12}
+plt_gen <- plot_ranef(res1$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_asRandom.pdf"),
+  width = 4, height = 12
+)
+```
+
+Plot variable explained variance
+
+```{r fig.width=6, fig.height=4}
+plot_sdse(sdse_tbl = res1$sdse, colSample = "sampleID") +
+  mytheme
+```
+
+## Library/Donor/Batch as random effect (model 2)
+
+`Ncs ∼ PCW+(1|Celltype)+(1∣Library)+(1∣Donor)+(1∣Batch)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)+(1∣Batch:Celltype)`
+
+```{r}
+terms <- c(
+    "PCWsca",
+    sprintf("(1|%s)", c("libraryID", "donorID", "Batch")),
+    sprintf("(%s-1|Celltype)", "PCWsca"),
+    sprintf("(1|%s:Celltype)", c("libraryID", "donorID", "Batch"))
+  )
+formula_str <- paste(c("I(Y) ~ (1|Celltype)", terms), collapse = "+")
+f <- as.formula(formula_str)
+f
+```
+
+fit
+
+```{r eval=FALSE}
+res2 <- CellTypeCompositionAnalysis2(f = f, data = input_dbl)
+saveRDS(res2, file = here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.rds"))
+```
+
+```{r}
+res2 <- readRDS(here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.rds"))
+summary(res2$res.prop)
+```
+
+```{r fig.width=4, fig.height=12}
+plt_gen <- plot_ranef(res2$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.pdf"),
+  width = 4, height = 12
+)
+```
+
+```{r fig.width=10, fig.height=12}
+plt_gen <- plot_ranef(res2$ranef, vars=list(PCWsca = c('Slope-PCWsca'),
+                                            Batch = levels(metadata$Batch)), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.FULL.pdf"),
+  width = 10, height = 12
+)
+```
+
+Plot variable explained variance
+
+```{r fig.width=6, fig.height=4}
+plot_sdse(sdse_tbl = res2$sdse, colSample = "sampleID") +
+  mytheme
+```
+
+### CMP model 2 and model 1
+
+ANOVA
+
+```{r}
+anova(res1$res.prop, res2$res.prop)
+```
+
+LRT
+
+```{r}
+lrtest(res1$res.prop, res2$res.prop)
+```
+
+## Library/Donor/Batch, and Sex as random effect (model 3)
+
+`Ncs ∼ PCW+(1∣Celltype)+(1∣Library)+(1∣Donor)+(1∣Sex)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)+(1∣Sex:Celltype)`
+
+```{r}
+terms <- c(
+    "PCWsca",
+    sprintf("(1|%s)", c("libraryID", "donorID", "Batch", "Sex")),
+    sprintf("(%s-1|Celltype)", "PCWsca"),
+    sprintf("(1|%s:Celltype)", c("libraryID", "donorID", "Batch", "Sex"))
+  )
+formula_str <- paste(c("I(Y) ~ (1|Celltype)", terms), collapse = "+")
+f <- as.formula(formula_str)
+f
+```
+
+fit
+
+```{r eval=FALSE}
+res3 <- CellTypeCompositionAnalysis2(f = f, data = input_dbl)
+saveRDS(res3, file = here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_Sex_asRandom.rds"))
+```
+
+```{r}
+res3 <- readRDS(here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_Sex_asRandom.rds"))
+summary(res3$res.prop)
+```
+
+```{r fig.width=6, fig.height=12}
+plt_gen <- plot_ranef(res3$ranef, vars=list(PCWsca = c('Slope-PCWsca'), Sex = c("M", "F")), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_Sex_asRandom.pdf"),
+  width = 6, height = 12
+)
+```
+
+Plot variable explained variance
+
+```{r fig.width=6, fig.height=4}
+plot_sdse(sdse_tbl = res3$sdse, colSample = "sampleID") +
+  mytheme
+```
+
+### CMP model 3 and model 2
+
+ANOVA
+
+```{r}
+anova(res2$res.prop, res3$res.prop)
+```
+
+LRT
+
+```{r}
+lrtest(res2$res.prop, res3$res.prop)
+```
+
+## Library/Donor/Batch as random, Sex as fixed (model 4)
+
+`Ncs ∼ PCW+Sex+(1∣Celltype)+(1∣Library)+(1∣Donor)+(1∣Batch)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)+(1∣Batch)`
+
+```{r}
+terms <- c(
+    "PCWsca",
+    "Sex",
+    sprintf("(1|%s)", c("libraryID", "donorID", "Batch")),
+    sprintf("(%s-1|Celltype)", "PCWsca"),
+    sprintf("(1|%s:Celltype)", c("libraryID", "donorID", "Batch"))
+  )
+formula_str <- paste(c("I(Y) ~ (1|Celltype)", terms), collapse = "+")
+f <- as.formula(formula_str)
+f
+```
+
+fit
+
+```{r eval=FALSE}
+res4 <- CellTypeCompositionAnalysis2(f = f, data = input_dbl)
+saveRDS(res4, file = here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.Sex_asFixed.rds"))
+```
+
+```{r}
+res4 <- readRDS(here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.Sex_asFixed.rds"))
+summary(res4$res.prop)
+```
+
+Plot variable explained variance
+
+```{r fig.width=6, fig.height=4}
+plot_sdse(sdse_tbl = res4$sdse, colSample = "sampleID") +
+  mytheme
+```
+
+### PCW
+
+```{r fig.width=4, fig.height=12}
+plt_gen <- plot_ranef(res4$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.Sex_asFixed.pdf"),
+  width = 4, height = 12
+)
+```
+
+```{r fig.width=10, fig.height=12}
+plt_gen <- plot_ranef(res4$ranef, vars=list(PCWsca = c('Slope-PCWsca'),
+                                            Batch = levels(metadata$Batch)), 
+                     celltypes = levels(obs_tbl$anno_wnn_v51),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_v51)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.Sex_asFixed.FULL.pdf"),
+  width = 10, height = 12
+)
+```
+
+### CMP model 4 and model 2
+
+ANOVA
+
+```{r}
+anova(res2$res.prop, res4$res.prop)
+```
+
+LRT
+
+```{r}
+lrtest(res2$res.prop, res4$res.prop)
+```
+
+### residual diagnostics
+
+```{r fig.width=8, fig.height=5}
+sim_res <- simulateResiduals(fittedModel = res4$res.prop)
+plot(sim_res)
+```
+
+dispersion test
+
+```{r fig.width=5, fig.height=4}
+testDispersion(sim_res)
+```
+
+Test for Zero-Inflation
+
+```{r fig.width=5, fig.height=4}
+testZeroInflation(sim_res)
+```
+
+## Session info
+
+

@@ -1,0 +1,203 @@
+---
+title: "variancePartition_plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "variancePartition_plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r}
+library(tidyverse)
+
+# plot
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggpubr)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# model
+library(variancePartition)
+
+# ORA
+library(clusterProfiler)
+library(org.Hs.eg.db)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+#source(here::here("utils/color.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+```
+
+## Pseudo-bulk
+
+```{r}
+vp_rna <- readRDS(here::here("output", "variancePartition.rna", "PBvp.rds"))
+vp_atac <- readRDS(here::here("output", "variancePartition.atac", "PBvp.rds"))
+vp_compo <- readRDS(here::here("output", "variancePartition.composition", "PBvp.rds"))
+```
+
+## Plot
+
+```{r fig.width=5, fig.height=2}
+plotVarPart2 <- function(obj, col = c(ggColorHue(ncol(obj) - 1), "grey85"), label.angle = 20, main = "", ylab = "", convertToPercent = TRUE, ylim, ...) {
+  # convert to data.frame
+  obj <- as.data.frame(obj, check.names = FALSE)
+
+  if (length(col) < ncol(obj)) {
+    stop("Not enough colors specified by col")
+  }
+
+  # get gene name of each row
+  obj$gene <- rownames(obj)
+
+  # convert to data.frame for ggplot
+  data <- reshape2::melt(obj, id = "gene")
+
+  if (min(data$value) < 0) {
+    warning("Some values are less than zero")
+  }
+
+  if (convertToPercent) {
+    data$value <- data$value * 100
+
+    if (missing(ylim)) {
+      ylim <- c(0, 100)
+    }
+  } else {
+    if (missing(ylim)) {
+      ylim <- c(0, max(data$value))
+    }
+  }
+
+  # add to pass R CMD check
+  variable <- 1
+  value <- 1
+
+  # violin plot
+  fig <- ggplot(data = data, aes(x = variable, y = value)) +
+    geom_violin(scale = "width", aes(fill = factor(variable))) +
+    ylab(ylab) +
+    xlab("") +
+    ylim(ylim) +
+    theme_bw() +
+    geom_boxplot(width = 0.07, fill = "grey", outlier.colour = "black", outlier.size = 0.5) +
+    scale_fill_manual(values = col) +
+    theme(legend.position = "none") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(axis.text.x = element_text(
+      size = 13,
+      angle = label.angle,
+      hjust = 1,
+      vjust = 1
+    ))
+
+  fig <- fig + theme(
+    text = element_text(colour = "black"),
+    axis.text = element_text(colour = "black"),
+    legend.text = element_text(colour = "black")
+  )
+
+  if (main != "") {
+    fig <- fig + ggtitle(main) + theme(plot.title = element_text(lineheight = .8, face = "bold"))
+  }
+
+  return(fig)
+}
+
+
+p1 <- plotVarPart2(vp_rna, outlier.size = 0.5) +
+  labs(title = "RNA", y = "Variance explained (%)") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p2 <- plotVarPart2(vp_atac) +
+  labs(title = "ATAC") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p3 <- plotVarPart2(vp_compo) +
+  labs(title = "Cell composition") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p <- p1 + p2 + p3
+p
+```
+
+vertical plot
+
+```{r fig.width=2, fig.height=6}
+p1 <- plotVarPart2(vp_rna, outlier.size = 0.5) +
+  labs(title = "RNA") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p2 <- plotVarPart2(vp_atac) +
+  labs(title = "ATAC", y = "Variance explained (%)") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+p3 <- plotVarPart2(vp_compo) +
+  labs(title = "Cell composition") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+
+p <- p1/p2/p3
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "variancePartition.pdf"),
+  width = 2, height = 6
+)
+```
+
+## Session info
+

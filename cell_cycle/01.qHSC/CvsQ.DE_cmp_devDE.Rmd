@@ -1,0 +1,141 @@
+---
+title: "HSC.CvsQ.olp_dev_de"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.CvsQ.olp_dev_de"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Cmp. DEGs
+
+dev deg
+
+```{r}
+df_dev_de <- readRDS(here::here("output", "HSC.dev_de_lmm", "HSC_lmm_de_time_df.rds"))
+
+dev_deg_lst <- list(
+  Dev.up = df_dev_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  Dev.dn = df_dev_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+lengths(dev_deg_lst)
+```
+
+QvsC deg
+
+```{r}
+df_qvsc_de <- readRDS(here::here("output", "HSC.CvsQ.DE", "G0_de.by_lmm.res_df.rds"))
+
+qvsc_deg_lst <- list(
+  qHSC.up = df_qvsc_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  qHSC.dn = df_qvsc_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+lengths(qvsc_deg_lst)
+```
+
+venn
+
+```{r fig.width=6, fig.height=4}
+a <- c(dev_deg_lst, qvsc_deg_lst)
+ggvenn::ggvenn(a, set_name_size = 4) +
+  labs(title = "Differential genes")
+```
+
+% of dev. degs that overlap with degs of Q vs C
+
+```{r}
+(327 + 47 + 18 + 181)/(775 + 829) * 100
+```
+
+% of Q vs C degs that overlap with dev. deg
+
+```{r}
+(327 + 47 + 18 + 181)/(968 + 781) * 100
+```
+
+upset plot
+
+```{r fig.width=4, fig.height=4}
+p <- ggVennDiagram(a, force_upset = TRUE, nintersects = 8, order.set.by = "none", relative_width = .4)
+
+pdf(here::here("output", DOCNAME, "DEGs_olp_of_QvsC_and_DevDiff.pdf"),
+  width = 4, height = 4
+)
+p
+invisible(dev.off())
+```
+
+## Session info

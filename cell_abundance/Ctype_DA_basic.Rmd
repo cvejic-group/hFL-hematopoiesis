@@ -1,0 +1,361 @@
+---
+title: "Ctype_DA_basic"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "Ctype_DA_basic"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(scattermore)
+library(ggrastr)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+Load cellmeta
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_PCW250401/data/FL_rna_clustered.rds")
+srat
+```
+
+Neat
+
+```{r}
+df <- srat@meta.data |>
+  rownames_to_column("barcode") |> 
+  mutate(celltype = anno_wnn_v51)
+```
+
+## group by Cluster (bar) {.tabset}
+
+celltype
+
+```{r fig.width=7.5, fig.height=2.5}
+d4p <- df |>
+  # mutate(PCW = factor(PCW)) |>
+  group_by(PCW, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100)
+
+p1 <- d4p |>
+  ggplot(aes(x = PCW, y = n, fill = celltype)) +
+  geom_col(width = .5) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(x = NULL, y = "# of cells")
+p2 <- d4p |>
+  ggplot(aes(x = PCW, y = prop, fill = celltype)) +
+  geom_col(width = .5) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(y = "% of cells")
+p1 + p2 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_barPlot_PCWByCluster.pdf"),
+  width = 7.5, height = 2.5
+)
+```
+
+Sample
+
+```{r fig.width=12, fig.height=8}
+d4p <- df |>
+  group_by(PCW, sampleID, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100)
+
+p1 <- d4p |>
+  ggplot(aes(x = sampleID, y = n, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(x = NULL) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2 <- d4p |>
+  ggplot(aes(x = sampleID, y = prop, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+p1 / p2 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_barPlot_sampleByCluster.pdf"),
+  width = 12, height = 8
+)
+```
+
+Donor
+
+```{r fig.width=12, fig.height=8}
+d4p <- df |>
+  group_by(PCW, donorID, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100)
+
+p1 <- d4p |>
+  ggplot(aes(x = donorID, y = n, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(x = NULL) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2 <- d4p |>
+  ggplot(aes(x = donorID, y = prop, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1 / p2 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_barPlot_donorByCluster.pdf"),
+  width = 12, height = 8
+)
+```
+
+Library
+
+```{r fig.width=12, fig.height=8}
+d4p <- df |>
+  group_by(PCW, libraryID, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100)
+
+p1 <- d4p |>
+  ggplot(aes(x = libraryID, y = n, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(x = NULL) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2 <- d4p |>
+  ggplot(aes(x = libraryID, y = prop, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  facet_grid(. ~ PCW, scales = "free", space = "free_x") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1 / p2 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_barPlot_libraryByCluster.pdf"),
+  width = 12, height = 8
+)
+```
+
+## group by Cluster (area) {.tabset}
+
+```{r fig.width=7, fig.height=4}
+d4p <- df |>
+  mutate(PCW = as.integer(as.character(PCW))) |> 
+  group_by(PCW, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100) |> 
+  ungroup() |> 
+  tidyr::complete(PCW, celltype, fill = list(n = 0, prop=0))
+
+p1 <- d4p |>
+  ungroup() |> 
+  ggplot(aes(x = PCW, y = prop, fill = celltype)) +
+  geom_area() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(labels = c(5:18), breaks = c(5:18), expand = c(0, 0)) +
+  scale_fill_manual(values = annot2col) +
+  labs(y = "% of cells")
+p1
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_areaPlot_PCWByCluster.pdf"),
+  width = 7, height = 4
+)
+```
+
+## PCW by cluster (bar)
+
+```{r fig.width=10, fig.height=8}
+d4p <- df |>
+  group_by(celltype, PCW) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n) * 100)
+
+p1 <- d4p |>
+  ggplot(aes(x = celltype, y = n, fill = PCW)) +
+  geom_col(width = .5) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = pcw2col) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  labs(y = "# of cells")
+p2 <- d4p |>
+  ggplot(aes(x = celltype, y = prop, fill = PCW)) +
+  geom_col(width = .5) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = pcw2col) +
+  labs(y = "% of cells") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1 / p2 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_composition_barPlot_clusterByPCW.pdf"),
+  width = 10, height = 8
+)
+```
+
+## Roe
+
+```{r fig.width=8, fig.height=5}
+tmp_df <- df |> 
+  mutate(Group = PCW)
+
+cluster_cellNum <- tmp_df %>%
+  group_by(celltype) %>%
+  summarise(cluster.cell_num = n()) %>%
+  mutate(cluster.cell_num = as.numeric(cluster.cell_num))
+
+group_CellNum <- tmp_df %>%
+  group_by(Group) %>%
+  summarise(group.cell_num = n()) %>%
+  mutate(group.cell_num = as.numeric(group.cell_num)) %>%
+  mutate(total = sum(group.cell_num)) %>%
+  mutate(total = as.numeric(total))
+
+cluster_byGroup <- tmp_df %>%
+  group_by(celltype, Group) %>%
+  summarise(o = n()) %>%
+  mutate(o = as.numeric(o)) %>%
+  ungroup() %>%
+  complete(celltype, Group, fill = list(o = 0))
+
+r_oe <- cluster_byGroup %>%
+  left_join(group_CellNum, by = "Group") %>%
+  left_join(cluster_cellNum, by = "celltype") %>%
+  mutate(e = (group.cell_num * cluster.cell_num) / total) %>%
+  mutate(r = o / e) %>%
+  dplyr::select(celltype, Group, r) %>%
+  spread(Group, r, fill = 0) %>%
+  column_to_rownames("celltype")
+
+# data for plot
+r_oe[r_oe > 10] <- 10
+d4p <- r_oe %>%
+  rownames_to_column("celltype") %>%
+  pivot_longer(cols = !celltype, names_to = "Group") %>%
+  mutate(
+    celltype = factor(celltype, levels = levels(tmp_df$celltype)),
+    Group = factor(Group, levels = rev(levels(tmp_df$Group)))
+  )
+
+# cell Num
+df.cell_num <- cluster_byGroup |> 
+  mutate(
+    Group = factor(Group, levels = rev(levels(tmp_df$Group)))
+)
+
+# plot
+p.roe <- ggplot(d4p, aes(x = celltype, y = Group, fill = value)) +
+  geom_tile() +
+  geom_point(
+    data = df.cell_num,
+    aes(x = celltype, y = Group, size = o),
+    shape = 1,
+    inherit.aes = FALSE
+  ) +
+  # scale_x_discrete(position = "top") +
+  scale_y_discrete(position = "left") +
+  scale_fill_gradient2(
+    midpoint = 1,
+    low = "blue", mid = "white", high = "red",
+    name = expression(R[O / E])
+  ) +
+  #scale_size(range = c(1, 3)) +
+  labs(size = "# Cells", x=NULL, y = "PCW") +
+  theme_cowplot(font_size = 10) +
+  theme(
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "top",
+    #text = element_text(size = 6),
+    panel.border = element_rect(colour = "black", fill = NA, size = .5)
+  )
+p.roe
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "FL_compositionPlot_Roe.pdf"),
+  width = 8, height = 5
+)
+```
+
+## Session info
+

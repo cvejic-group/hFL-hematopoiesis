@@ -1,0 +1,486 @@
+---
+title: "HSC.dev_da_plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.dev_da_plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# TF
+library(SummarizedExperiment)
+library(monaLisa)
+library(ChIPseeker)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+Load
+
+```{r}
+srat <- qs::qread(here::here("output", "HSC.dev_de_lemur", "srat_rna.qs"))
+srat
+table(srat$PCW, useNA = "ifany")
+```
+
+LMM res
+
+```{r}
+df_res <- readRDS(here::here("output", "HSC.dev_da_mc_CpG", "HSC_dev_da_peak_CGcontent_anno.rds"))
+head(df_res)
+```
+
+monaLisa TF enrich
+
+```{r}
+se <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "se.rds"))
+se_df <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "HSC_DA_peak_monaLisa_sig_TF.rds"))
+seSel <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "seSel.rds"))
+seSel
+```
+
+monaLisa TF enrich, proximal/distal
+
+```{r}
+se2 <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "se.sep_proximal_distal_limitedTF.rds"))
+se2
+```
+
+TF motif 2 gene name
+
+```{r}
+df_motif2gene <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "df_motif2gene.rds"))
+tf_genes <- unique(c(df_motif2gene$tf1, df_motif2gene$tf2))
+length(tf_genes)
+tf_genes
+```
+
+## DA peak anno
+
+```{r , fig.width=1.8, fig.height=3}
+d4p <- df_res |> 
+  group_by(sig, anno) |> 
+  summarise(n = n()) |> 
+  mutate(prop = n/sum(n))
+d4p
+
+p1 <- d4p |> 
+  ggplot(aes(x = sig, y = prop, fill = anno)) +
+  geom_col() +
+  scale_fill_jco() +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = NULL, y = "Proportion", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1
+```
+
+Fisher
+
+```{r}
+# Run Fisher test function (same as before)
+run_fisher <- function(df=NULL, annotation = NULL, group = NULL) {
+  df <- df %>%
+    mutate(sig = as.character(sig),
+           anno = as.character(anno))
+  
+  a <- df$n[df$sig == group & df$anno == annotation]
+  b <- sum(df$n[df$sig == group & df$anno != annotation])
+  c <- df$n[df$sig == "N.S." & df$anno == annotation]
+  d <- sum(df$n[df$sig == "N.S." & df$anno != annotation])
+  
+  m <- matrix(c(a,b,c,d), nrow=2, byrow=TRUE,
+              dimnames=list(Group=c(group,"N.S."),
+                            Annotation=c(annotation,"Other")))
+  
+  ft <- fisher.test(m, alternative="two.sided")
+  
+  tibble(
+    p.value = ft$p.value,
+    odds.ratio = unname(ft$estimate),
+    conf.low = ft$conf.int[1],
+    conf.high = ft$conf.int[2]
+  )
+}
+```
+
+```{r}
+# Define groups and annotations
+groups <- c("DA-down", "DA-up")
+annos <- unique(d4p$anno)
+
+results <- expand.grid(group = groups, anno = annos) |> 
+  mutate(fisher = map2(anno, group, ~ run_fisher(df = d4p, annotation = .x, group = .y))) |> 
+  unnest(fisher) |> 
+  mutate(p.adj = p.adjust(p.value, method = "BH"))
+
+results |> 
+  DT::datatable()
+```
+
+```{r fig.width=3.8, fig.height=3}
+res <- results %>%
+  mutate(
+    sig_label = case_when(
+      p.adj < 0.001 ~ "***",
+      p.adj < 0.01  ~ "**",
+      p.adj < 0.05  ~ "*",
+      TRUE ~ ""
+    ),
+    anno = factor(anno, levels = c("Other", "Distal", "Proximal"))
+  )
+
+p2 <- ggplot(res, aes(x = anno, y = odds.ratio, color = group)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                width = 0.2, position = position_dodge(width = 0.6)) +
+  geom_text(aes(label = sig_label),
+            position = position_dodge(width = 0.6),
+            vjust = -1, size = 5) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "gray40") +
+  scale_y_log10() +
+  scale_color_manual(values = c("#476fa9", "#ca3226")) +
+  labs(y = "Odds Ratio (log scale)",
+       x = NULL) +
+  theme(legend.position = "top") +
+  coord_flip()
+plot_grid(p1, p2, rel_widths = c(1.8, 2))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.dev_da_plot.peak_anno.pdf"),
+  width = 3.8, height = 3
+)
+```
+
+## GC content
+
+```{r fig.width=3, fig.height=3.5}
+cmp_lst <- list(c("DA-down", "DA-up"), c("N.S.", "DA-up"), c("N.S.", "DA-down"))
+
+p1 <- df_res |> 
+  ggplot(aes(x = sig, y = c_and_g)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "C + G nucleotide count in peaks") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2 <- df_res |> 
+  ggplot(aes(x = sig, y = cg)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "CG dinucleotide count in peaks") +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1 + p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.dev_da_plot.peak_CG.pdf"),
+  width = 3, height = 3.5
+)
+```
+
+## monaLisa TF
+
+### bin
+
+bin
+
+```{r}
+df_da <- df_res |> 
+  filter(ltsr > 0.9)
+
+bins <- bin(x = df_da$beta, binmode = "equalN", nElement = 1000, minAbsX = NULL)
+df_da$bins <- bins
+table(bins)
+```
+
+```{r fig.width=10, fig.height=8}
+plotBinDensity(df_da$beta, bins, legend = "right", xlab = "Effect size (LMM beta)")
+```
+
+### TF heatmap
+
+expressed fraction by PCW in HSC
+
+```{r eval=FALSE}
+tmp_lst_c <- lapply(levels(srat$PCW), function(x){
+  srat_sub <- subset(srat, subset = PCW == x)
+  gm <- srat_sub@assays$RNA$counts
+  return(rowSums(gm > 0)/ncol(gm))
+})
+percent_stats <- do.call(cbind, tmp_lst_c)
+colnames(percent_stats) <- paste0("fraction_expressed_", levels(srat$PCW))
+saveRDS(percent_stats, file = here::here("output", DOCNAME, "geneFracExpressed.HSC_byPCW.rds"))
+```
+
+Filtering
+
+```{r}
+percent_stats <- readRDS(here::here("output", DOCNAME, "geneFracExpressed.HSC_byPCW.rds"))
+percent_stats <- percent_stats[tf_genes,]
+dim(percent_stats)
+
+rowSums(percent_stats >= 0.01)
+sum(rowSums(percent_stats >= 0.01) >= 3)
+sum(rowSums(percent_stats >= 0.01) >= 5)
+sum(rowSums(percent_stats >= 0.05) >= 2)
+sum(rowSums(percent_stats >= 0.05) >= 3)
+sum(rowSums(percent_stats > 0.05) >= 5)
+```
+
+Keep: 5% in at least 2 time points
+
+```{r}
+tf_keep <- rownames(percent_stats)[rowSums(percent_stats > 0.05) >= 2]
+df_motif_keep <- df_motif2gene |> 
+  mutate(tf1_keep = ifelse(tf1 %in% tf_keep, TRUE, FALSE),
+         tf2_keep = ifelse(tf2 %in% tf_keep, TRUE, FALSE)) |> 
+  mutate(motif_keep = tf1_keep & tf2_keep) |> 
+  filter(motif_keep == TRUE)
+dim(df_motif_keep)
+```
+
+Motifs removed
+
+```{r}
+df_motif2gene |> 
+  mutate(tf1_keep = ifelse(tf1 %in% tf_keep, TRUE, FALSE),
+         tf2_keep = ifelse(tf2 %in% tf_keep, TRUE, FALSE)) |> 
+  mutate(motif_keep = tf1_keep & tf2_keep) |> 
+  filter(motif_keep == FALSE)
+```
+
+motif similarity
+
+```{r}
+seSel <- seSel[rownames(df_motif_keep),]
+SimMatSel <- motifSimilarity(rowData(seSel)$motif.pfm)
+range(SimMatSel)
+```
+
+seqlogo, motif similarity
+
+```{r fig.width=10, fig.height=10}
+# create hclust object, similarity defined by 1 - Pearson correlation
+hcl <- hclust(as.dist(1 - SimMatSel), method = "average")
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = NULL,
+                  show_dendrogram = TRUE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1.5,
+                row_names_gp = gpar(fontsize = 8))
+```
+
+maxSig = 10, show_dendrogram = FALSE
+
+```{r fig.width=8, fig.height=7}
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  show_dendrogram = FALSE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1,
+                row_names_gp = gpar(fontsize = 8))
+```
+
+Save
+
+```{r fig.width=8, fig.height=7}
+pdf(here::here("output", DOCNAME, "HSC.dev_da_plot.monaLisa_TF.pdf"), width = 8, height = 7)
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  show_dendrogram = FALSE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1,
+                row_names_gp = gpar(fontsize = 8))
+invisible(dev.off())
+```
+
+### Tables
+
+Filter
+
+```{r}
+se_df |> 
+  filter(motif_id %in% rownames(df_motif_keep)) |> 
+  write_tsv(file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.filt_by_exp.tsv"))
+```
+
+### Proximal/distal
+
+```{r fig.width=5, fig.height=6}
+plotMotifHeatmaps(x = se2[rownames(df_motif_keep),], which.plots = c("log2enr", "negLog10Padj"),
+                maxEnr = 2, maxSig = 10,
+                cluster = TRUE, 
+                #show_motif_GC = TRUE,
+                width = 1.5,
+                row_names_gp = gpar(fontsize = 8))
+```
+
+```{r eval=FALSE, echo=FALSE}
+# the order of TFs
+x <- c("Nr1H2", "HSF1", "HSF2", "FOSL2::JUNB", "FOSL1::JUN", "FOSL2::JUN", "FOS::JUN", "FOS::JUND", "BACH1", "FOSB::JUNB", "FOS::JUNB", "FOSL2::JUND", "FOSL1::JUND", "FOSL1::JUNB", "FOSL1", "JUNB", "JUND", "BATF::JUN", "BNC2", "Atf3", "BATF", "Jun", "FOS", "JDP2", "BACH2", "NFE2", "NFIC", "NFIB", "NFIX", "RUNX3", "Runx1", "FOSL2::JUN", "FOS::JUN", "JUN::JUNB", "JUN::JUNB", "RFX2", "RFX5", "RFX1", "RFX3", "RUNX2", "NFYB", "Atf1", "NFYA", "NFYC")
+```
+
+### TF exp.
+
+```{r}
+tf_genes <- unique(c(df_motif_keep$tf1, df_motif_keep$tf2))
+length(tf_genes)
+sort(tf_genes)
+```
+
+HSC DEGs
+
+```{r}
+df_de <- readRDS(here::here("output", "HSC.dev_de_lmm", "HSC_lmm_de_time_df.rds"))
+
+deg_lst <- list(
+  LMM_up = df_de |> filter(ltsr > 0.9, beta > 0) |> pull(gene),
+  LMM_dn = df_de |> filter(ltsr > 0.9, beta < 0) |> pull(gene)
+)
+```
+
+```{r fig.width=5, fig.height=6}
+p <- DotPlot(srat, features = sort(tf_genes, decreasing = T), group.by = "PCW", scale = TRUE) +
+  coord_flip() +
+  labs(x = NULL, y = NULL, title = "TF expression")
+
+# Extract plot data
+plot_data <- p$data
+
+plot_data <- plot_data |> 
+  mutate(features.group = case_when(
+    features.plot %in% deg_lst$LMM_up ~ "Up",
+    features.plot %in% deg_lst$LMM_dn ~ "Down",
+    TRUE ~ "NotSig"
+  ))
+
+# Define colors for each group
+group_colors <- c("Up" = "red", "Down" = "blue", "NotSig" = "gray")
+gene_color_vector <- setNames(group_colors[plot_data$features.group], plot_data$features.plot)
+
+p <- p +
+  publ_theme +
+  theme(axis.text.y = element_text(colour = gene_color_vector[levels(plot_data$features.plot)],
+                                   face = "bold"))
+p
+```
+
+add a gene group legend
+
+```{r fig.width=5, fig.height=6}
+# gene group legend
+gene_group_legend <- Legend(
+  title = "DEGs",
+  labels = names(group_colors),
+  legend_gp = gpar(fill = group_colors),
+  labels_gp = gpar(fontsize = 6),
+  title_gp = gpar(fontsize = 8),
+  title_position = "topleft",
+  row_gap = unit(2, "mm"),
+  #direction = "horizontal", nrow = 1
+)
+pd = packLegend(gene_group_legend)
+gl <- plot_grid(grid.grabExpr(draw(pd)))
+
+p.dot <- gl + p +
+  plot_layout(widths = c(0.2, 1))
+p.dot
+```
+
+## Peak anno by PG links {.tabset}
+
+dotplot, simiplified GO-BP
+
+```{r fig.width=3.3, fig.height=6}
+cg.BP <- readRDS(here::here("output", "HSC.dev_da_mcScale", "HSC_lmm_da_time.ORA_GOBP_by_PG.rds"))
+s_cg.BP <- simplify(cg.BP, cutoff = 0.5)
+
+p <- dotplot(s_cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40), position = "right") +
+  scale_x_discrete(labels = c("DA-up", "DA-down")) +
+  labs(x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.dev_da_plot.peak_anno_byPG_GOBP.pdf"),
+  width = 3.3, height = 6
+)
+```
+
+## Session info

@@ -1,0 +1,299 @@
+---
+title: "gwas.magma_plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "gwas.magma_plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Load libs
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(viridis)
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+#library(Seurat)
+
+# ORA
+library(clusterProfiler)
+#library(org.Hs.eg.db)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+source(here::here("utils/gwas_enrichment.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Set up
+
+```{r}
+res_dir <- "~/project/20231127_DevM/gwas/MAGMA_gene/result"
+```
+
+## RA/NK -- finn {.tabset}
+
+### label known genes
+
+olp with known genes from: <https://link.springer.com/article/10.1007/s00281-022-00912-0/tables/1>
+
+```{r fig.width=4.5, fig.height=3}
+pheno <- "ra_finn"
+cell <- "NK"
+out_prefix <- paste0(pheno, "_", cell)
+
+# label selected genes
+ra_finn_res_df <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene.rds")))
+
+gene_selected <- c(
+  "HLA-DRB1", "HLA-DRA",
+  "PTPN22", "TNFAIP3", "CDK2", "ACOXL", "TRAF1", "RUNX1", "CLNK", "CD226", "ICAM1"
+)
+label_selected <- ra_finn_res_df |> 
+  filter(GENE_NEW %in% gene_selected) |> 
+  dplyr::select(GENE, GENE_NEW)
+
+fname <- file.path(res_dir, paste0(out_prefix, "_cCRE_analysis.genes.out"))
+res <- plot_magma_Manhattan(fname, label_selected =label_selected, plot_title = "Rheumatoid arthritis (FinnGen)")
+p1 <- res$p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, paste0(out_prefix, ".magma_gene_manhattan.label_known.pdf")),
+  width = 4.5, height = 3
+)
+```
+
+### label known and common/more
+
+gene selected: common in two cohorts and checked in literature
+
+ra_finn
+
+```{r fig.width=4.5, fig.height=3}
+# label selected genes
+ra_finn_res_df <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene.rds")))
+
+ra_genes <- c(
+  # MHC-II
+  "HLA-DRB1",
+  # MHC-II region: histone gene
+  "H3C8", "H4C2",
+  # other
+    "BCL2L11", "FLOT1", "HCP5", "HIPK1",
+              "HSPA1A", "LTB", "MICB", "PDE4A",
+               "TNF", "LZTFL1",
+  # other
+  "PTPN22", "TNFAIP3", "ICAM1", "TRAF1", "CDK2", "ACOXL")
+label_selected <- ra_finn_res_df |> 
+  filter(GENE_NEW %in% ra_genes) |> 
+  dplyr::select(GENE, GENE_NEW)
+
+fname <- file.path(res_dir, paste0(out_prefix, "_cCRE_analysis.genes.out"))
+res <- plot_magma_Manhattan(fname, label_selected =label_selected, plot_title = "Rheumatoid arthritis (FinnGen)")
+p1 <- res$p
+p1
+
+ggsave2(
+  filename = here::here("output", DOCNAME, paste0(out_prefix, ".magma_gene_manhattan.label_more.pdf")),
+  width = 4.5, height = 3
+)
+```
+
+### ORA
+
+```{r fig.width=3.5, fig.height=3}
+s_ego <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene_ORA_GOBP.simplify.rds")))
+
+p <- dotplot(s_ego, showCategory = 15) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  scale_size_continuous(range = c(1, 4)) +
+  publ_theme
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME,
+                        paste0(out_prefix, ".magma_gene.ORA_GOBP_simplify.pdf")),
+  width = 3.5, height = 3
+)
+```
+
+## RA/NK -- GCST90132223 {.tabset}
+
+### label known genes
+
+olp with known genes from: <https://link.springer.com/article/10.1007/s00281-022-00912-0/tables/1>
+
+ra_GCST90132223
+
+```{r fig.width=4.5, fig.height=3}
+pheno <- "ra_GCST90132223"
+cell <- "NK"
+out_prefix <- paste0(pheno, "_", cell)
+ra_GCST90132223_res_df <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene.rds")))
+
+gene_selected <- c(
+  "HLA-DRB1", "HLA-DQB1",
+  "PTPN22", "TNFAIP3", "CDK2", "ACOXL", "TRAF1",
+  "TAGAP", "SPRED2", "PRKCQ", "UBASH3A", "IL12RB2",
+  "FCRL3", "IL6ST", "PSTPIP1", "TNFRSF9", "ICAM1"
+)
+label_selected <- ra_finn_res_df |> 
+  filter(GENE_NEW %in% gene_selected) |> 
+  dplyr::select(GENE, GENE_NEW)
+
+fname <- file.path(res_dir, paste0(out_prefix, "_cCRE_analysis.genes.out"))
+res <- plot_magma_Manhattan(fname, label_selected =label_selected, plot_title = "Rheumatoid arthritis (GCST90132223)")
+res$p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, paste0(out_prefix, ".magma_gene_manhattan.label_known.pdf")),
+  width = 4.5, height = 3
+)
+```
+
+### label known and common/more
+
+ra_GCST90132223
+
+```{r fig.width=4.5, fig.height=3}
+fname <- file.path(res_dir, paste0(out_prefix, "_cCRE_analysis.genes.out"))
+res <- plot_magma_Manhattan(fname, label_selected =label_selected, plot_title = "Rheumatoid arthritis (GCST90132223)")
+p2 <- res$p
+p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, paste0(out_prefix, ".magma_gene_manhattan.label_more.pdf")),
+  width = 4.5, height = 3
+)
+```
+
+### ORA
+
+```{r fig.width=3.5, fig.height=3}
+s_ego <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene_ORA_GOBP.simplify.rds")))
+
+p <- dotplot(s_ego, showCategory = 15) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  scale_size_continuous(range = c(1, 4)) +
+  publ_theme
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME,
+                        paste0(out_prefix, ".magma_gene.ORA_GOBP_simplify.pdf")),
+  width = 3.5, height = 3
+)
+```
+
+## Dermatitis and eczema/NK
+
+```{r fig.width=4.5, fig.height=3}
+pheno <- "dermatitiseczema_finn"
+cell <- "NK"
+out_prefix <- paste0(pheno, "_", cell)
+
+# label selected genes
+dermatitiseczema_finn_res_df <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene.rds")))
+
+de_genes <- c(
+  "IL18R1", "IL18RAP", "IL1RL1",
+  "HLA-DMA", "HLA-DQB1",
+  "DUSP1", "SOCS1", "SOCS3", "NFKBIA",
+  "CCR7", "TNF", "HSPA1A", "CXCR4", "IFNGR1",
+  "LTB", "PRR5L",
+  "NOTCH4", "SLC9A4", "IRF1", "ETS1", "TAGAP")
+label_selected <- dermatitiseczema_finn_res_df |> 
+  filter(GENE_NEW %in% de_genes) |> 
+  dplyr::select(GENE, GENE_NEW)
+
+fname <- file.path(res_dir, paste0(out_prefix, "_cCRE_analysis.genes.out"))
+res <- plot_magma_Manhattan(fname, label_selected =label_selected, plot_title = "Dermatitis and eczema")
+p3 <- res$p
+p3
+
+ggsave2(
+  filename = here::here("output", DOCNAME, paste0(out_prefix, ".magma_gene_manhattan.label_known.pdf")),
+  width = 4.5, height = 3
+)
+```
+
+### ORA
+
+```{r fig.width=3.5, fig.height=3}
+s_ego <- readRDS(here::here("output", "gwas.magma_analysis", paste0(out_prefix, ".magma_gene_ORA_GOBP.simplify.rds")))
+
+p <- dotplot(s_ego, showCategory = 15) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  scale_size_continuous(range = c(1, 4)) +
+  publ_theme
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME,
+                        paste0(out_prefix, ".magma_gene.ORA_GOBP_simplify.pdf")),
+  width = 3.5, height = 3
+)
+```
+
+## Session info

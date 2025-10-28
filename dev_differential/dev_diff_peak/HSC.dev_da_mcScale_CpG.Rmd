@@ -1,0 +1,324 @@
+---
+title: "HSC.dev_da_mc_CpG"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.dev_da_mc_CpG"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+
+# plot
+library(ggsci)
+library(RColorBrewer)
+library(scales)
+library(ComplexHeatmap)
+library(pheatmap)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggpubr)
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# specific
+#library(Seurat)
+
+# TF
+library(monaLisa)
+library(SummarizedExperiment)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load
+
+LMM res
+
+```{r}
+output_name <- "HSC.dev_da_lmm_mc_scale"
+
+df_res <- readRDS(here::here("output", output_name, "HSC_dev_da_lmm_df.rds")) |> 
+  dplyr::rename(peak = gene) |> 
+  mutate(sig = case_when(
+    ltsr > 0.9 & beta > 0 ~ "DA-up",
+    ltsr > 0.9 & beta < 0 ~ "DA-down",
+    TRUE ~ "N.S."
+  )) |> 
+  mutate(sig = factor(sig, levels = c("DA-down", "DA-up", "N.S.")))
+table(df_res$sig)
+```
+
+Read all peaks tested
+
+```{r}
+peak_all <- ChIPseeker::readPeakFile(here::here("output", output_name, "HSC_dev_da_lmm.peak_tested.cpgIsland_cov.bed"))
+```
+
+Anno of the peaks tested
+
+```{r}
+peakAnnoAll <- readRDS(here::here("output", "HSC.dev_da_mcScale", "HSC_dev_da.peak_all_anno.rds"))
+peak_anno <- as.data.frame(peakAnnoAll@anno) |> 
+  mutate(
+    anno = case_when(
+    abs(distanceToTSS) <= 1000 ~ "Proximal", # this is exactly the same as == "Promoter"
+    annotation == "Distal Intergenic" ~ "Distal",
+    TRUE ~ "Other"
+  ),
+  anno2 = str_split(annotation, " [(]", simplify = T)[,1]
+  ) |> 
+  dplyr::select(peak = V4, anno, anno2) |> 
+  mutate(anno = factor(anno, levels = c("Proximal", "Distal", "Other")),
+         anno2 = factor(anno2, levels = c("Promoter", "5' UTR", "Intron", "Exon", "3' UTR", "Downstream", "Distal Intergenic"))
+  )
+table(peak_anno$anno)
+table(peak_anno$anno2)
+```
+
+## Neat
+
+get mean accessibility of each peak
+
+```{r}
+df_mean_atac <- readRDS(here::here("output", "HSC.dev_da_mc_CpG", "df_mean_atac.rds"))
+```
+
+Get C+G counts and CG dinucleotide counts
+
+```{r}
+peak_seq <- getSeq(BSgenome.Hsapiens.UCSC.hg38, peak_all)
+dnf <- Biostrings::dinucleotideFrequency(peak_seq)
+onf <- Biostrings::oligonucleotideFrequency(peak_seq, width = 1)
+df_cg_freq <- data.frame(peak = peak_all$V4, cg = dnf[,"CG"], c_and_g = onf[,"C"] + onf[,"G"])
+```
+
+CpG island coverage (by `bedtools coverage`)
+
+```{r}
+df_cpg_cov <- data.frame(peak = peak_all$V4, cpg_cov = peak_all$V10)
+```
+
+join
+
+```{r}
+d4p <- df_res |> 
+  left_join(df_mean_atac, by = "peak") |> 
+  left_join(df_cg_freq, by = "peak") |> 
+  left_join(df_cpg_cov, by = "peak") |> 
+  left_join(peak_anno, by = "peak")
+dim(d4p)
+head(d4p)
+
+saveRDS(d4p, file = here::here("output", DOCNAME, "HSC_dev_da_peak_CGcontent_anno.rds"))
+```
+
+sig. ones
+
+```{r}
+df_da <- d4p |> 
+  filter(ltsr > 0.9)
+
+bins <- bin(x = df_da$beta, binmode = "equalN", nElement = 1000, minAbsX = NULL)
+df_da$bins <- bins
+table(bins)
+```
+
+## Beta vs. Mean accessibility
+
+```{r fig.width=10, fig.height=5}
+p1 <- d4p |> 
+  ggplot(aes(x = beta, y = mean_atac, color = sig)) +
+  geom_point_rast() +
+  stat_cor() +
+  scale_color_manual(values = c("gray", "#0073C2FF", "#CD534CFF")) +
+  labs(x = "metacell-LMM beta", y = "Mean log-normalized ATAC fragment count",
+       title = glue::glue("All peaks tested (n = {nrow(d4p)})"))
+p2 <- df_da |> 
+  ggplot(aes(x = bins, y = mean_atac)) +
+  geom_boxplot() +
+  labs(x = "metacell-LMM beta in bins", y = "Mean log-normalized ATAC fragment count",
+       title = glue::glue("Sig. DA peaks (n = {nrow(df_da)})")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+p <- p1 + p2 +
+  plot_layout(ncol = 2, widths = c(6, 4))
+p
+```
+
+## Beta vs. high CG?
+
+CpG coverage
+
+```{r fig.width=10, fig.height=5}
+p1 <- d4p |> 
+  ggplot(aes(x = beta, y = cpg_cov, color = sig)) +
+  geom_point_rast() +
+  stat_cor() +
+  scale_color_manual(values = c("gray", "#0073C2FF", "#CD534CFF")) +
+  labs(x = "metacell-LMM beta", y = "Proportion covered by CpG islands",
+       title = glue::glue("All peaks tested (n = {nrow(d4p)})"))
+p2 <- df_da |> 
+  ggplot(aes(x = bins, y = cpg_cov)) +
+  geom_boxplot() +
+  labs(x = "metacell-LMM beta in bins", y = "Proportion covered by CpG islands",
+       title = glue::glue("Sig. DA peaks (n = {nrow(df_da)})")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+p <- p1 + p2 +
+  plot_layout(ncol = 2, widths = c(6, 4))
+p
+```
+
+G + C
+
+```{r fig.width=10, fig.height=5}
+p1 <- d4p |> 
+  ggplot(aes(x = beta, y = c_and_g, color = sig)) +
+  geom_point_rast() +
+  stat_cor() +
+  scale_color_manual(values = c("gray", "#0073C2FF", "#CD534CFF")) +
+  labs(x = "metacell-LMM beta", y = "C + G nuc count in peaks",
+       title = glue::glue("All peaks tested (n = {nrow(d4p)})"))
+p2 <- df_da |> 
+  ggplot(aes(x = bins, y = c_and_g)) +
+  geom_boxplot() +
+  labs(x = "metacell-LMM beta in bins", y = "C + G nuc count in peaks",
+       title = glue::glue("Sig. DA peaks (n = {nrow(df_da)})")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+p <- p1 + p2 +
+  plot_layout(ncol = 2, widths = c(6, 4))
+p
+```
+
+CG di-nucleotide
+
+```{r fig.width=10, fig.height=5}
+p1 <- d4p |> 
+  ggplot(aes(x = beta, y = cg, color = sig)) +
+  geom_point_rast() +
+  stat_cor() +
+  scale_color_manual(values = c("gray", "#0073C2FF", "#CD534CFF")) +
+  labs(x = "metacell-LMM beta", y = "CG dinuc count in peaks",
+       title = glue::glue("All peaks tested (n = {nrow(d4p)})"))
+p2 <- df_da |> 
+  ggplot(aes(x = bins, y = cg)) +
+  geom_boxplot() +
+  labs(x = "metacell-LMM beta in bins", y = "CG dinuc count in peaks",
+       title = glue::glue("Sig. DA peaks (n = {nrow(df_da)})")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+p <- p1 + p2 +
+  plot_layout(ncol = 2, widths = c(6, 4))
+p
+```
+
+## GC of Up- vs. Dn- peaks
+
+down-regulated peaks have higher GC contents?
+
+```{r}
+compare_means(c_and_g ~ sig, data = d4p)
+```
+
+```{r}
+compare_means(cg ~ sig, data = d4p)
+```
+
+```{r fig.width=5, fig.height=4}
+cmp_lst <- list(c("DA-down", "DA-up"), c("N.S.", "DA-up"), c("N.S.", "DA-down"))
+
+p1 <- d4p |> 
+  ggplot(aes(x = sig, y = c_and_g)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "C + G nuc count in peaks") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2 <- d4p |> 
+  ggplot(aes(x = sig, y = cg)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "CG dinuc count in peaks") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1 + p2
+```
+
+proximal/distal?
+
+```{r}
+table(d4p$sig, d4p$anno)
+```
+
+```{r fig.width=10, fig.height=5}
+p1 <- d4p |> 
+  ggplot(aes(x = sig, y = c_and_g)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "C + G nuc count in peaks") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  facet_wrap(.~anno)
+#p1
+p2 <- d4p |> 
+  ggplot(aes(x = sig, y = cg)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = cmp_lst) +
+  labs(x = NULL, y = "CG dinuc count in peaks") +
+  theme_pubr() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  facet_wrap(.~anno)
+p1 + p2
+```
+
+## Session info

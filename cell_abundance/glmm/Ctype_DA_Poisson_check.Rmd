@@ -1,0 +1,436 @@
+---
+title: "Ctype_DA_Poisson_check"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "Ctype_DA_Poisson_check"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r}
+library(tidyverse)
+
+# plot
+library(grid)
+library(scattermore)
+library(ggpubr)
+library(ggrepel)
+library(ggrastr)
+library(ggpmisc)
+library(gg.layers)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+library(ggrepel)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Set up
+
+Load cellmeta
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_PCW250401/data/FL_rna_clustered.rds")
+srat
+```
+
+Neat
+
+```{r}
+obs_tbl <- srat@meta.data |>
+  rownames_to_column("barcode")
+
+metadata <- obs_tbl |> 
+  dplyr::select(sampleID, libraryID, donorID, Sex, PCW, Batch) |> 
+  distinct() |> 
+  mutate(Sex = factor(Sex, levels = c("M", "F"))) |> 
+  mutate(Batch = factor(Batch))
+```
+
+count table (cell number of each cell type and each sample)
+
+```{r}
+# freq
+Y <- table(obs_tbl$anno_wnn_v51, obs_tbl$sampleID)
+df_freq <- as.data.frame(t(Y)) |> 
+  dplyr::rename(sampleID = Var1, Celltype = Var2) |> 
+  left_join(metadata, by = "sampleID")
+
+# prop
+dat_bySample <- Y/colSums(Y)
+df_prop <- as.data.frame(t(dat_bySample)) |> 
+  dplyr::rename(sampleID = Var1, Celltype = Var2) |> 
+  left_join(metadata, by = "sampleID")
+```
+
+## Sex
+
+```{r fig.width=12, fig.height=4}
+p1 <- metadata |> 
+  dplyr::select(donorID, Sex, PCW, Batch) |> 
+  distinct() |> 
+  group_by(PCW, Sex) |> 
+  summarise(n = n()) |> 
+  ggplot(aes(x = PCW, y = n, fill = Sex, label = n)) +
+  geom_col() +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(y = "# of donors") +
+  theme(legend.position = c(.9, .8))
+p2 <- metadata |> 
+  dplyr::select(libraryID, Sex, PCW, Batch) |> 
+  distinct() |> 
+  group_by(PCW, Sex) |> 
+  summarise(n = n()) |> 
+  ggplot(aes(x = PCW, y = n, fill = Sex, label = n)) +
+  geom_col() +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(y = "# of libraries") +
+  theme(legend.position = c(.9, .8))
+p1 + p2
+```
+
+In general
+
+```{r fig.width=4, fig.height=4}
+df_prop |> 
+  ggplot(aes(x = Sex, y = Freq)) +
+  geom_jitter() +
+  stat_compare_means() +
+  labs(title = "Proportion of each cell type (sample)")
+```
+
+Each celltype
+
+```{r fig.width=12, fig.height=14}
+df_prop |> 
+  ggplot(aes(x = Sex, y = Freq)) +
+  geom_jitter() +
+  stat_compare_means() +
+  labs(title = "Proportion of each cell type (sample)") +
+  facet_wrap(. ~ Celltype, scales = "free", ncol = 6)
+```
+
+## Batch
+
+```{r fig.width=12, fig.height=4}
+p1 <- metadata |> 
+  dplyr::select(donorID, Sex, PCW, Batch) |> 
+  distinct() |> 
+  group_by(PCW, Batch) |> 
+  summarise(n = n()) |> 
+  ggplot(aes(x = PCW, y = n, fill = Batch, label = n)) +
+  geom_col() +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_ucscgb() +
+  labs(y = "# of donors")
+p2 <- metadata |> 
+  dplyr::select(libraryID, Sex, PCW, Batch) |> 
+  distinct() |> 
+  group_by(PCW, Batch) |> 
+  summarise(n = n()) |> 
+  ggplot(aes(x = PCW, y = n, fill = Batch, label = n)) +
+  geom_col() +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_ucscgb() +
+  labs(y = "# of libraries")
+p1 + p2
+```
+
+In general
+
+```{r fig.width=6, fig.height=4}
+df_prop |> 
+  ggplot(aes(x = Batch, y = Freq)) +
+  geom_jitter() +
+  stat_compare_means() +
+  labs(title = "Proportion of each cell type (sample)")
+```
+
+Each celltype
+
+```{r fig.width=15, fig.height=20}
+df_prop |> 
+  ggplot(aes(x = Batch, y = Freq)) +
+  geom_jitter() +
+  stat_compare_means(method = "anova") +
+  labs(title = "Proportion of each cell type (sample)") +
+  facet_wrap(. ~ Celltype, scales = "free", ncol = 5)
+```
+
+## Repeated libs for the same donors (freq)
+
+library effects stronger than library + donor?
+
+```{r fig.width=8, fig.height=4}
+df_libEffect <- data.frame(sampleID = colnames(Y),
+                 mean = colMeans(Y),
+                 sd = apply(Y, 2, sd)) |> 
+  left_join(metadata, by = "sampleID") |> 
+  left_join(metadata |> 
+              group_by(donorID) |> 
+              summarise(donorN = n()), by = "donorID") |> 
+  left_join(metadata |> 
+              group_by(libraryID) |> 
+              summarise(libN = n()), by = "libraryID") |> 
+  mutate(
+    libEffect = case_when(
+    donorN == 1 & libN == 1 ~ "libraryAsDonor",
+    donorN == 1 & libN > 1 ~ NA,
+    TRUE ~ donorID)
+  ) |> 
+  filter(!is.na(libEffect))
+
+m <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(mean) |> mean()
+p_m <- df_libEffect |> 
+  ggplot(aes(x = libEffect, y = mean, color = Sex)) +
+  geom_jitter(width = .15, height = 0) +
+  geom_hline(yintercept = m, linetype = "dashed") +
+  labs(title = "Mean/sd of cell freq (sample)",
+       y = "mean of cell freq") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+m <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(sd) |> mean()
+p_s <- df_libEffect |> 
+  ggplot(aes(x = libEffect, y = sd, color = Sex)) +
+  geom_jitter(width = 0.15, height = 0) +
+  geom_hline(yintercept = m, linetype = "dashed") +
+  labs(y = "sd of cell freq") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p_mean_var <- p_m + p_s +
+  plot_layout(guides = "collect")
+p_mean_var <- plot_grid(p_mean_var)
+p_mean_var
+```
+
+correlations
+
+```{r fig.width=2, fig.height=4}
+df_cor <- as.data.frame(get_upper_tri(cor(Y))) |> 
+  rownames_to_column("sample1") |> 
+  pivot_longer(cols = starts_with("FL"), names_to = "sample2") |> 
+  filter(value != 1, sample1 != sample2) |> 
+  mutate(
+    donor1 = str_split(sample1, "-", simplify = T)[,1],
+    donor2 = str_split(sample2, "-", simplify = T)[,1]
+  ) |> 
+  mutate(
+    group = case_when(
+      donor1 == donor2 ~ "sameDonor",
+      TRUE ~ "diffDonor"
+    )
+  )
+
+p_cor <- df_cor |> 
+  ggplot(aes(x = group, y = value)) +
+  geom_boxplot() +
+  labs(x = NULL, y = "correlation of cell freq across samples") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p_cor
+```
+
+distributions
+
+```{r fig.width=6, fig.height=4}
+replicate_donors <- df_libEffect |> filter(libEffect != "libraryAsDonor") |> pull(donorID)
+d4p <- df_freq |> 
+  filter(donorID %in% replicate_donors)
+
+d4p |> 
+  ggplot(aes(x = donorID, y = Freq, fill = libraryID)) +
+  geom_boxplot2(width.errorbar = 0.1) +
+  labs(x = NULL, y = "cell freq (sample)", title = "cell freq dist. of replicate libraries") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+```{r fig.width=8, fig.height=4}
+nonreplicate_donors <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(donorID)
+d4p <- df_freq |> 
+  filter(donorID %in% nonreplicate_donors)
+
+d4p |> 
+  ggplot(aes(x = reorder(donorID, -Freq, median), y = Freq)) +
+  geom_boxplot2(width.errorbar = 0.2) +
+  labs(x = NULL, y = "cell freq (sample)", title = "cell freq dist. of independent libraries") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+Save
+
+```{r fig.width=5, fig.height=4}
+plot_grid(p_s, p_cor, rel_widths = c(4, 2))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Ctype_DA_check_similarityOfRepeatedLibraries.pdf"),
+  width = 5, height = 4
+)
+```
+
+## Repeated libs for the same donors (prop)
+
+
+library effects stronger than library + donor?
+
+```{r fig.width=8, fig.height=4}
+df_libEffect <- data.frame(sampleID = colnames(dat_bySample),
+                 mean = colMeans(dat_bySample),
+                 sd = apply(dat_bySample, 2, sd)) |> 
+  left_join(metadata, by = "sampleID") |> 
+  left_join(metadata |> 
+              group_by(donorID) |> 
+              summarise(donorN = n()), by = "donorID") |> 
+  left_join(metadata |> 
+              group_by(libraryID) |> 
+              summarise(libN = n()), by = "libraryID") |> 
+  mutate(
+    libEffect = case_when(
+    donorN == 1 & libN == 1 ~ "libraryAsDonor",
+    donorN == 1 & libN > 1 ~ NA,
+    TRUE ~ donorID)
+  ) |> 
+  filter(!is.na(libEffect))
+
+m <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(mean) |> mean()
+p_m <- df_libEffect |> 
+  ggplot(aes(x = libEffect, y = mean, color = Sex)) +
+  geom_jitter(width = .15, height = 0) +
+  geom_hline(yintercept = m, linetype = "dashed") +
+  labs(title = "Mean/sd of cell prop (sample)",
+       y = "mean of cell prop") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+m <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(sd) |> mean()
+p_s <- df_libEffect |> 
+  ggplot(aes(x = libEffect, y = sd, color = Sex)) +
+  geom_jitter(width = 0.15, height = 0) +
+  geom_hline(yintercept = m, linetype = "dashed") +
+  labs(y = "sd of cell prop") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p_mean_var <- p_m + p_s +
+  plot_layout(guides = "collect")
+p_mean_var <- plot_grid(p_mean_var)
+p_mean_var
+```
+
+correlations
+
+```{r fig.width=2, fig.height=4}
+df_cor <- as.data.frame(get_upper_tri(cor(dat_bySample))) |> 
+  rownames_to_column("sample1") |> 
+  pivot_longer(cols = starts_with("FL"), names_to = "sample2") |> 
+  filter(value != 1, sample1 != sample2) |> 
+  mutate(
+    donor1 = str_split(sample1, "-", simplify = T)[,1],
+    donor2 = str_split(sample2, "-", simplify = T)[,1]
+  ) |> 
+  mutate(
+    group = case_when(
+      donor1 == donor2 ~ "sameDonor",
+      TRUE ~ "diffDonor"
+    )
+  )
+
+p_cor <- df_cor |> 
+  ggplot(aes(x = group, y = value)) +
+  geom_boxplot() +
+  labs(x = NULL, y = "correlation of cell prop across samples") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+p_cor
+```
+
+distributions
+
+```{r fig.width=6, fig.height=4}
+replicate_donors <- df_libEffect |> filter(libEffect != "libraryAsDonor") |> pull(donorID)
+d4p <- df_prop |> 
+  filter(donorID %in% replicate_donors)
+
+d4p |> 
+  ggplot(aes(x = donorID, y = Freq, fill = libraryID)) +
+  geom_boxplot2(width.errorbar = 0.1) +
+  labs(x = NULL, y = "cell prop (sample)", title = "cell prop dist. of replicate libraries") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+```{r fig.width=8, fig.height=4}
+nonreplicate_donors <- df_libEffect |> filter(libEffect == "libraryAsDonor") |> pull(donorID)
+d4p <- df_prop |> 
+  filter(donorID %in% nonreplicate_donors)
+
+d4p |> 
+  ggplot(aes(x = reorder(donorID, -Freq, median), y = Freq)) +
+  geom_boxplot2(width.errorbar = 0.2) +
+  labs(x = NULL, y = "cell prop (sample)", title = "cell prop dist. of independent libraries") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+## Session info

@@ -1,0 +1,161 @@
+---
+title: "Ctype_DA_plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "Ctype_DA_plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+# plot
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggpubr)
+library(ggbeeswarm)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+source(here::here("utils/CellTypeCompositionAnalysis.R"))
+```
+
+## Load data
+
+Load cellmeta
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_PCW250401/data/FL_rna_clustered.rds")
+srat
+```
+
+WNN-milo
+
+```{r}
+df_milo <- read.csv("/work/DevM_analysis/02.abundance/Milo_FL_PCW250401/data/FL_wnn_milo.nhood_test_res.csv")
+dim(df_milo)
+table(df_milo$nhood_annotation)
+table(df_milo$donorSpecific)
+```
+
+Poisson GLMM
+
+```{r}
+res_glmm <- readRDS(here::here("output", "Ctype_DA_Poisson_bySample", "GLMM.Library_Donor_Batch_asRandom.Sex_asFixed.rds"))
+```
+
+## Plot
+
+Milo
+
+```{r fig.width=5, fig.height=10}
+d4p <- df_milo |> 
+  filter(nhood_annotation != "Mixed", donorSpecific == "Good") |> 
+  group_by(nhood_annotation) %>%
+  mutate(m_logFC = median(logFC)) |> 
+  ungroup() |> 
+  arrange(-m_logFC) |> 
+  mutate(nhood_annotation=factor(nhood_annotation, levels=unique(nhood_annotation))) |> 
+  mutate(logFC_color = ifelse(is_signif=="True", logFC, NA))
+
+p_milo <- d4p %>%
+  ggplot(aes(x = nhood_annotation, y = logFC, color=logFC_color)) +
+  geom_quasirandom(size=0.8, width = .3) +
+  geom_point(data= . %>% distinct(nhood_annotation, m_logFC), aes(x=nhood_annotation, y=m_logFC), color="black")  +
+  scale_color_gradient2() +
+  coord_flip() +
+  guides(color="none", fill="none") +
+  geom_hline(yintercept=0, linetype=2) +
+  xlab("") + ylab("Log Fold Change in time") +
+  theme_pubr(legend = "right", base_size = 15)
+p_milo
+```
+
+GLMM
+
+```{r fig.width=4, fig.height=12}
+plt_gen <- plot_ranef2(res_glmm$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = intersect(levels(srat$anno_wnn_v51), levels(d4p$nhood_annotation)),
+                     celltype_order = levels(d4p$nhood_annotation),
+                     highlightLtsr = 0.95) +
+  labs(y = NULL, x = "PCW") +
+  theme_pubr(legend = "right", base_size = 15) +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text.x=element_blank())
+plt_gen
+```
+
+cowplot
+
+```{r fig.width=8, fig.height=10}
+plot_grid(p_milo, plt_gen + theme(axis.text.y = element_blank()), rel_widths = c(4, 2.5))
+```
+
+patchwork
+
+```{r fig.width=10, fig.height=10}
+p_milo +
+  (plt_gen + theme(axis.text.y = element_blank())) +
+  plot_layout(widths = c(3, 1))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Ctype_DA_milo_and_GLMM.pdf"),
+  width = 10, height = 10
+)
+```
+
+## Session info
+

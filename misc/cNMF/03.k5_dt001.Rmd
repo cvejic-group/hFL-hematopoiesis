@@ -1,0 +1,727 @@
+---
+title: "cnmf_hsc.k5_dt001"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "cnmf_hsc.k5_dt001"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Load libs
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(viridis)
+library(RColorBrewer)
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# gsea
+library(fgsea)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+source(here::here("utils/gwas_enrichment.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+source(here::here("utils/adjusted_neighborhood_scoring.R"))
+```
+
+## Set up
+
+cnmf results
+
+```{r}
+data_dir <- "~/project/20231127_DevM/cNMF/data/FL_HSC"
+usage_file <- file.path(data_dir, "FL_HSC.usages.k_5.dt_0_01.consensus.txt")
+spectra_score_file <- file.path(data_dir, "FL_HSC.gene_spectra_score.k_5.dt_0_01.txt")
+
+usage <- read.table(usage_file, sep='\t', row.names=1, header=TRUE)
+usage_norm <- as.data.frame(t(apply(usage, 1, function(x) x / sum(x))))
+spectra_score <- read_tsv(spectra_score_file, col_names = TRUE) |> 
+  as.data.frame()
+# Move first column to rownames
+rownames(spectra_score) <- spectra_score[[1]]
+spectra_score[[1]] <- NULL
+
+colnames(usage_norm) <- paste0("GEP", 1:ncol(usage_norm))
+usage_norm[1:3, 1:3]
+```
+
+srat
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_rna_clustered.v01.rds")
+
+# wnn
+latent <- read_csv("/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_umap.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["wnn.umap"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "wnnumap_", assay = DefaultAssay(srat))
+# mvi
+latent <- read_csv("/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_mvi_umap.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["mvi.umap"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "mviumap_", assay = DefaultAssay(srat))
+
+# fa-paga
+latent <- read_csv("/work/DevM_analysis/03.trajectory/diffusion_mvi/data/FL_HSC_diffusion_fa_paga.csv") |>
+  column_to_rownames("barcode")
+latent <- latent[colnames(srat),]
+latent <- as.matrix(latent)
+srat[["fa.paga"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "fapaga_", assay = DefaultAssay(srat))
+srat
+```
+
+Load cellmeta
+
+```{r}
+df_hsc <- read.csv('/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_cellmeta.v01.csv') |> 
+  dplyr::select(barcode = X, anno_wnn_hsc = "leiden_wnn_0.3") |> 
+  mutate(anno_wnn_hsc = paste0("HSC-", anno_wnn_hsc)) |> 
+  mutate(anno_wnn_hsc = factor(anno_wnn_hsc))
+srat@meta.data <- srat@meta.data |> 
+  rownames_to_column("barcode") |> 
+  left_join(df_hsc, by = "barcode") |> 
+  column_to_rownames("barcode")
+```
+
+Add usage to srat
+
+```{r}
+srat@meta.data <- srat@meta.data |> 
+  rownames_to_column("barcode") |> 
+  left_join(usage_norm |> 
+              rownames_to_column("barcode"), by = "barcode") |> 
+  column_to_rownames("barcode")
+```
+
+## GEP usage dotplot
+
+```{r fig.width=5, fig.height=4}
+p <- DotPlot(srat, features = colnames(usage_norm), group.by = "anno_wnn_hsc", scale = FALSE) +
+  coord_flip() +
+  guides(
+  size = guide_legend(title = "Percent of usage > 0"),
+  color = guide_colorbar(title = "GEP usage")
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p
+```
+
+## GEP usage UMAP {.tabset}
+
+### WNN
+
+```{r fig.width=12, fig.height=7}
+plst <- FeaturePlot(srat, features = colnames(usage_norm), reduction = "wnn.umap", combine = FALSE)
+p <- lapply(plst, function(p) {
+  p +
+    publ_theme +
+    small_axis(label = "wnnUMAP")
+}) |> 
+  wrap_plots(ncol = 3)
+p
+```
+
+### MVI
+
+```{r fig.width=12, fig.height=7}
+plst <- FeaturePlot(srat, features = colnames(usage_norm), reduction = "mvi.umap", combine = FALSE)
+p <- lapply(plst, function(p) {
+  p +
+    publ_theme +
+    small_axis(label = "mviUMAP")
+}) |> 
+  wrap_plots(ncol = 3)
+p
+```
+
+### FA-PAGA
+
+```{r fig.width=12, fig.height=7}
+plst <- FeaturePlot(srat, features = colnames(usage_norm), reduction = "fa.paga", combine = FALSE)
+p <- lapply(plst, function(p) {
+  p +
+    publ_theme +
+    small_axis(label = "FA-PAGA")
+}) |> 
+  wrap_plots(ncol = 3)
+p
+```
+
+## Top genes
+
+```{r fig.width=12, fig.height=7}
+plst <- lapply(1:nrow(spectra_score), function(x){
+  data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,x]) |> 
+    arrange(-value) |> 
+    mutate(rank = 1:length(gene)) |> 
+    head(n = 2000) |> 
+    ggplot(aes(x = rank, y = value)) +
+    geom_point() +
+    geom_vline(xintercept = c(50, 100, 150, 200), linetype = "dashed") +
+    labs(title = paste0("GEP", x))
+})
+plst |> 
+  wrap_plots(ncol = 3)
+```
+
+```{r}
+topgenes <- lapply(1:nrow(spectra_score), function(x){
+  data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,x]) |> 
+    arrange(-value) |> 
+    mutate(rank = 1:length(gene)) |> 
+    head(n = 100) |> 
+    pull(gene)
+})
+names(topgenes) <- paste0("GEP", 1:nrow(spectra_score))
+
+DT::datatable(as.data.frame(topgenes))
+```
+
+## Cmp. with previous signatures {.tabset}
+
+```{r}
+quiescent_hsc_signatures <- readRDS(here::here("data/quiescent_hsc_signatures.rds"))
+lengths(quiescent_hsc_signatures)
+```
+
+### GEP3
+
+```{r}
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,3]) |> 
+    arrange(-value)
+rank_gep3 <- setNames(tmp_df$value, tmp_df$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_gep3,
+                  minSize  = 15,
+                  maxSize  = 500)
+fgseaRes
+```
+
+```{r fig.width=8, fig.height=4}
+plotGseaTable(quiescent_hsc_signatures, rank_gep3, fgseaRes, 
+              gseaParam=0.5)
+```
+
+```{r fig.width=10, fig.height=4}
+p1 <- plotEnrichment(quiescent_hsc_signatures$BM_LTvsST_up,
+               rank_gep3) + labs(title="BM LT-HSC vs ST-HSC up")
+p2 <- plotEnrichment(quiescent_hsc_signatures$Graham_QvsC_up,
+               rank_gep3) + labs(title="Graham quiescence vs. cycling up")
+p1 + p2
+```
+
+### GEP1
+
+```{r}
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,1]) |> 
+    arrange(-value)
+rank_gep1 <- setNames(tmp_df$value, tmp_df$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_gep1,
+                  minSize  = 15,
+                  maxSize  = 500)
+fgseaRes
+```
+
+```{r fig.width=8, fig.height=6}
+plotGseaTable(quiescent_hsc_signatures, rank_gep1, fgseaRes, 
+              gseaParam=0.5)
+```
+
+### GEP2
+
+```{r}
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,2]) |> 
+    arrange(-value)
+rank_gep2 <- setNames(tmp_df$value, tmp_df$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_gep2,
+                  minSize  = 15,
+                  maxSize  = 500)
+fgseaRes
+```
+
+```{r fig.width=8, fig.height=6}
+plotGseaTable(quiescent_hsc_signatures, rank_gep2, fgseaRes, 
+              gseaParam=0.5)
+```
+
+### GEP5
+
+```{r}
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,5]) |> 
+    arrange(-value)
+rank_gep5 <- setNames(tmp_df$value, tmp_df$gene)
+
+set.seed(1)
+fgseaRes <- fgsea(pathways = quiescent_hsc_signatures, 
+                  stats    = rank_gep5,
+                  minSize  = 15,
+                  maxSize  = 500)
+fgseaRes
+```
+
+```{r fig.width=8, fig.height=6}
+plotGseaTable(quiescent_hsc_signatures, rank_gep5, fgseaRes, 
+              gseaParam=0.5)
+```
+
+## GSEA {.tabset}
+
+### GEP3 {.tabset}
+
+```{r eval=FALSE}
+i <- 3
+out_prefix <- paste0("GEP", i)
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,i]) |> 
+  arrange(-value)
+rank_gep <- setNames(tmp_df$value, tmp_df$gene)
+
+# hallmark
+h_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/h.all.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em <- GSEA(rank_gep, TERM2GENE = h_t2g, eps = 0)
+saveRDS(em, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+as.data.frame(em) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.tsv")))
+
+# KEGG
+c2cp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em2 <- GSEA(rank_gep, TERM2GENE = c2cp_t2g, eps = 0)
+saveRDS(em2, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+as.data.frame(em2) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.tsv")))
+
+# GO-BP
+c5gobp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c5.go.bp.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em3 <- GSEA(rank_gep, TERM2GENE = c5gobp_t2g, eps = 0)
+saveRDS(em3, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+as.data.frame(em3) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.tsv")))
+```
+
+#### Hallmark
+
+```{r fig.width=6, fig.height=6}
+i <- 3
+out_prefix <- paste0("GEP", i)
+em <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+
+as.data.frame(em) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em, top_n = 5)
+```
+
+#### KEGG
+
+```{r fig.width=8, fig.height=6}
+em2 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+
+as.data.frame(em2) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em2)
+```
+
+#### GO-BP
+
+```{r fig.width=8, fig.height=6}
+em3 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+
+as.data.frame(em3) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em3)
+```
+
+### GEP1 {.tabset}
+
+```{r eval=FALSE}
+i <- 1
+out_prefix <- paste0("GEP", i)
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,i]) |>
+  arrange(-value)
+rank_gep <- setNames(tmp_df$value, tmp_df$gene)
+
+# hallmark
+h_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/h.all.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em <- GSEA(rank_gep, TERM2GENE = h_t2g, eps = 0)
+saveRDS(em, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+as.data.frame(em) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.tsv")))
+
+# KEGG
+c2cp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em2 <- GSEA(rank_gep, TERM2GENE = c2cp_t2g, eps = 0)
+saveRDS(em2, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+as.data.frame(em2) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.tsv")))
+
+# GO-BP
+c5gobp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c5.go.bp.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em3 <- GSEA(rank_gep, TERM2GENE = c5gobp_t2g, eps = 0)
+saveRDS(em3, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+as.data.frame(em3) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.tsv")))
+```
+
+#### Hallmark
+
+```{r fig.width=6, fig.height=6}
+i <- 1
+out_prefix <- paste0("GEP", i)
+em <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+
+as.data.frame(em) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em, top_n = 5)
+```
+
+#### KEGG
+
+```{r fig.width=8, fig.height=6}
+em2 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+
+as.data.frame(em2) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em2)
+```
+
+#### GO-BP
+
+```{r fig.width=8, fig.height=6}
+em3 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+
+as.data.frame(em3) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em3)
+```
+
+### GEP2 {.tabset}
+
+```{r eval=FALSE}
+i <- 2
+out_prefix <- paste0("GEP", i)
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,i]) |> 
+  arrange(-value)
+rank_gep <- setNames(tmp_df$value, tmp_df$gene)
+
+# hallmark
+h_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/h.all.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em <- GSEA(rank_gep, TERM2GENE = h_t2g, eps = 0)
+saveRDS(em, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+as.data.frame(em) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.tsv")))
+
+# KEGG
+c2cp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em2 <- GSEA(rank_gep, TERM2GENE = c2cp_t2g, eps = 0)
+saveRDS(em2, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+as.data.frame(em2) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.tsv")))
+
+# GO-BP
+c5gobp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c5.go.bp.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em3 <- GSEA(rank_gep, TERM2GENE = c5gobp_t2g, eps = 0)
+saveRDS(em3, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+as.data.frame(em3) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.tsv")))
+```
+
+#### Hallmark
+
+```{r fig.width=6, fig.height=6}
+i <- 2
+out_prefix <- paste0("GEP", i)
+em <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+
+as.data.frame(em) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em, top_n = 5)
+```
+
+#### KEGG
+
+```{r fig.width=8, fig.height=6}
+em2 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+
+as.data.frame(em2) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em2)
+```
+
+#### GO-BP
+
+```{r fig.width=8, fig.height=6}
+em3 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+
+as.data.frame(em3) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em3)
+```
+
+### GEP5 {.tabset}
+
+```{r eval=FALSE}
+i <- 5
+out_prefix <- paste0("GEP", i)
+tmp_df <- data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,i]) |> 
+  arrange(-value)
+rank_gep <- setNames(tmp_df$value, tmp_df$gene)
+
+# hallmark
+h_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/h.all.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em <- GSEA(rank_gep, TERM2GENE = h_t2g, eps = 0)
+saveRDS(em, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+as.data.frame(em) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.tsv")))
+
+# KEGG
+c2cp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c2.cp.kegg_medicus.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em2 <- GSEA(rank_gep, TERM2GENE = c2cp_t2g, eps = 0)
+saveRDS(em2, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+as.data.frame(em2) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.tsv")))
+
+# GO-BP
+c5gobp_t2g = read.gmt('~/RefData/MSigDB/msigdb_v2024.1.Hs_files_to_download_locally/msigdb_v2024.1.Hs_GMTs/c5.go.bp.v2024.1.Hs.symbols.gmt')
+set.seed(1)
+em3 <- GSEA(rank_gep, TERM2GENE = c5gobp_t2g, eps = 0)
+saveRDS(em3, file = here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+as.data.frame(em3) |> 
+  write_tsv(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.tsv")))
+```
+
+#### Hallmark
+
+```{r fig.width=6, fig.height=6}
+i <- 5
+out_prefix <- paste0("GEP", i)
+em <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_Hallmark.rds")))
+
+as.data.frame(em) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em, top_n = 5)
+```
+
+#### KEGG
+
+```{r fig.width=8, fig.height=6}
+em2 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C2-KEGG.rds")))
+
+as.data.frame(em2) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em2)
+```
+
+#### GO-BP
+
+```{r fig.width=8, fig.height=6}
+em3 <- readRDS(here::here("output", DOCNAME, paste0(out_prefix, ".GSEA_C5-GOBP.rds")))
+
+as.data.frame(em3) |> 
+  filter(p.adjust < 0.05) |> 
+  dplyr::select(ID, setSize, NES, p.adjust) |> 
+  arrange(-NES) |> 
+  DT::datatable(rownames = FALSE)
+
+plot_top_gsea_bar(er = em3)
+```
+
+## In all cells? {.tabset}
+
+### AddModuleScore 
+
+```{r}
+srat_b <- readRDS("/work/DevM_analysis/01.annotation/11.subclustering/blood/data/FL_rna_clustered.v00.rds")
+
+# wnn
+latent <- read_csv("/work/DevM_analysis/01.annotation/11.subclustering/blood/data/FL_wnn_umap.csv") |>
+  column_to_rownames("barcode") |> as.matrix()
+srat_b[["wnn.umap"]] <- CreateDimReducObject(embeddings = latent,
+                                           key = "wnnumap_", assay = DefaultAssay(srat_b))
+
+srat_b <- AddModuleScore(srat_b, features = topgenes, seed = 1)
+x <- grep("^Cluster", colnames(srat_b@meta.data))
+colnames(srat_b@meta.data)[x] <- paste0("ModuleScore-", names(topgenes))
+```
+
+```{r fig.width=12, fig.height=7}
+plst <- FeaturePlot(srat_b, features = paste0("ModuleScore-GEP", 1:nrow(spectra_score)), reduction = "wnn.umap", combine = FALSE)
+p <- lapply(plst, function(p) {
+  p +
+    publ_theme +
+    small_axis(label = "wnnUMAP")
+}) |> 
+  wrap_plots(ncol = 3)
+p
+```
+
+```{r fig.width=5, fig.height=9}
+p <- DotPlot(srat_b, features = paste0("ModuleScore-GEP", 1:nrow(spectra_score)), group.by = "anno_wnn_v51", scale = TRUE) +
+  #coord_flip() +
+  guides(
+  size = guide_legend(title = "Percent of ModuleScore > 0"),
+  color = guide_colorbar(title = "ModuleScore")
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p
+```
+
+## Save
+
+Top genes (export top 500)
+
+```{r}
+topgenes <- lapply(1:nrow(spectra_score), function(x){
+  data.frame(gene = colnames(spectra_score), value = t(spectra_score)[,x]) |> 
+    arrange(-value) |> 
+    mutate(rank = 1:length(gene)) |> 
+    head(n = 500) |> 
+    pull(gene)
+})
+names(topgenes) <- paste0("GEP", 1:nrow(spectra_score))
+
+qs::qsave(topgenes, file = here::here("output", DOCNAME, "cNMF_topGene_genes_perGEP.qs"))
+as.data.frame(topgenes) |> 
+  write_csv(file = here::here("output", DOCNAME, "cNMF_topGene_genes_perGEP.csv"))
+```
+
+save the obj
+
+```{r eval=FALSE}
+srat
+qs::qsave(srat, file = here::here("output", DOCNAME, "srat.qs"))
+```
+
+## Session info
+
