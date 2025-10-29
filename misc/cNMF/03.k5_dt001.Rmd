@@ -139,19 +139,6 @@ srat[["fa.paga"]] <- CreateDimReducObject(embeddings = latent,
 srat
 ```
 
-Load cellmeta
-
-```{r}
-df_hsc <- read.csv('/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_cellmeta.v01.csv') |> 
-  dplyr::select(barcode = X, anno_wnn_hsc = "leiden_wnn_0.3") |> 
-  mutate(anno_wnn_hsc = paste0("HSC-", anno_wnn_hsc)) |> 
-  mutate(anno_wnn_hsc = factor(anno_wnn_hsc))
-srat@meta.data <- srat@meta.data |> 
-  rownames_to_column("barcode") |> 
-  left_join(df_hsc, by = "barcode") |> 
-  column_to_rownames("barcode")
-```
-
 Add usage to srat
 
 ```{r}
@@ -160,20 +147,6 @@ srat@meta.data <- srat@meta.data |>
   left_join(usage_norm |> 
               rownames_to_column("barcode"), by = "barcode") |> 
   column_to_rownames("barcode")
-```
-
-## GEP usage dotplot
-
-```{r fig.width=5, fig.height=4}
-p <- DotPlot(srat, features = colnames(usage_norm), group.by = "anno_wnn_hsc", scale = FALSE) +
-  coord_flip() +
-  guides(
-  size = guide_legend(title = "Percent of usage > 0"),
-  color = guide_colorbar(title = "GEP usage")
-  ) +
-  labs(x = NULL, y = NULL) +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
-p
 ```
 
 ## GEP usage UMAP {.tabset}

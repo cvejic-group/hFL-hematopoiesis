@@ -6,11 +6,6 @@
 
 annot2col <- c(
   "HSC"="#E41A1C",
-  "HSC-0" = "#FECD6C",
-  "HSC-1" = "#77C298",
-  "HSC-2" = "#718DBF",
-  "HSC-3" = "#A4547D",
-  "HSC-4" = "#E84D60",
   "GP"="#E0FFFF",
   "Granulocyte"="#B3CDE3",
   "MEMP-t"="#E6AB02",

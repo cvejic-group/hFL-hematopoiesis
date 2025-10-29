@@ -73,14 +73,13 @@ for (cell in cells) {
   df <- as.data.frame(proj@cellColData) %>%
     rownames_to_column("barcode") %>%
     mutate(logFrag = log(nFrags)) %>%
-    dplyr::select(barcode, nFrags, logFrag, libraryID, donorID, PCW, Sex, Batch, anno_wnn_hsc) %>%
+    dplyr::select(barcode, nFrags, logFrag, libraryID, donorID, PCW, Sex, Batch) %>%
     left_join(data.frame(barcode = names(f_pm), fracOpenPm = f_pm), by = "barcode") %>%
     left_join(data.frame(barcode = names(f_tm), fracOpenTm = f_tm), by = "barcode") %>%
     mutate(libraryID = factor(libraryID),
            donorID = factor(donorID),
            Sex = factor(Sex),
-           Batch = factor(Batch),
-           anno_wnn_hsc = factor(anno_wnn_hsc))
+           Batch = factor(Batch))
   # Apply pairwise
   cat_vars <- names(df[, c("libraryID", "donorID", "Sex", "Batch")])
   comb <- combn(cat_vars, 2)

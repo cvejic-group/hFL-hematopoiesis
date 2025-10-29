@@ -30,27 +30,6 @@ log.info(f"read input h5ad")
 adata = sc.read_h5ad(indata)
 log.info(f"anndata info: {adata}")
 
-# add HSC subtypes
-def add_hsc_sub(data=None):
-    # hsc sub
-    df = pd.read_csv('/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_cellmeta.v01.csv', index_col=0)
-    df = df[['leiden_wnn_0.3']].rename(columns={'leiden_wnn_0.3': 'anno_wnn_hsc'})
-    df['anno_wnn_hsc'] = df['anno_wnn_hsc'].astype(str).str.replace("^", 'HSC-', regex=True)
-    cat_order = ["HSC-0", "HSC-1", "HSC-2", "HSC-3", "HSC-4",
-                 "GP", "Granulocyte",
-                  "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
-                  "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
-                  "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-                  "LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
-                  "NK", "ILCP", "T"]
-    data.obs = data.obs.merge(df, left_index=True, right_index=True, how='left')
-    data.obs['anno_wnn_hsc'] = data.obs['anno_wnn_hsc'].fillna(data.obs['anno_wnn_v51'])
-    data.obs['anno_wnn_hsc'] = data.obs['anno_wnn_hsc'].astype("category")
-    new_cat_order = [i for i in cat_order if i in data.obs['anno_wnn_hsc'].unique()]
-    data.obs['anno_wnn_hsc'] = data.obs['anno_wnn_hsc'].cat.reorder_categories(new_cat_order)
-    return data
-adata = add_hsc_sub(data=adata)
-
 # palantir
 log.info(f"run palantir")
 multivi_projections = pd.DataFrame(adata.obsm["X_multiVI"], index=adata.obs_names)

@@ -53,8 +53,7 @@ cellmeta <- getCellColData(proj) %>%
       anno_wnn_v5 == "Cycling_LP" ~ "Cycling-LP",
       TRUE ~ anno_wnn_v5
     )
-  ) %>%
-  left_join(df_hsc, by = "barcotalbde")
+  )
 cellmeta$anno_wnn_v51 <- factor(cellmeta$anno_wnn_v51, levels = c("HSC", "GP", "Granulocyte",
                                                           "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                                                           "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",

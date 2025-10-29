@@ -38,18 +38,12 @@ dim(pm)
 df_archr <- read_csv("~/project/20231127_DevM/archr_rproj/output/archr_48FL.eachCell/HSC/archr_cellmeta.csv") |>
   mutate(barcode = str_replace(barcode, "#", "_")) |>
   dplyr::select(barcode, nFrags)
-# HSC subtypes
-df_hsc = read.csv('/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_cellmeta.v01.csv') |>
-  dplyr::select(barcode = X, celltype = leiden_wnn_0.3) |>
-  mutate(celltype = paste0("HSC-", celltype)) |>
-  mutate(celltype = factor(celltype))
 # mdata
 mdata <- srat@meta.data |>
   rownames_to_column("barcode") |>
   left_join(df_archr, by = "barcode") |>
   left_join(df_mc, by = "barcode") |> # mc_group
   dplyr::select(-celltype, -starts_with("RNA_snn")) |>
-  left_join(df_hsc, by = "barcode") |>
   mutate(
     donorID = factor(donorID),
     Sex = factor(Sex),
