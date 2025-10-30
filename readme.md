@@ -45,6 +45,7 @@ Code and scripts used for the custom analyses in the manuscript. These are share
 * misc
   * variancePartition
   * cNMF
+  * bam_frag_per_cell
 
 * utils
 
