@@ -1,0 +1,464 @@
+---
+title: "DNAm.plot"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm.plot"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggpmisc)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# DNAm
+library(bsseq)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+source(here::here("utils/DNAm.R"))
+```
+
+## Load
+
+No sex chroms
+
+```{r}
+bs <- qs2::qs_read(here::here("output", "DNAm", "bs_5mC_filt.autosomes.qs2"))
+bs
+```
+
+sam info
+
+```{r}
+sam_info <- as.data.frame(pData(bs)) |>
+  rownames_to_column("donorID") |> 
+  mutate(PCW = as.numeric(as.character(PCW)))
+head(sam_info)
+```
+
+## PCA
+
+```{r}
+.plot_pca <- function(pca = NULL, bs = NULL, plot_col = NULL,
+                      plot_x = "PC1", plot_y = "PC2") {
+  samInfo <- as.data.frame(pData(bs)) |>
+    rownames_to_column("Sample")
+  d4p <- data.frame(
+    Sample = colnames(bs),
+    PC1 = pca$x[, 1],
+    PC2 = pca$x[, 2],
+    PC3 = pca$x[, 3],
+    PC4 = pca$x[, 4]
+  ) |>
+    left_join(samInfo, by = "Sample")
+
+  # Percent variance explained
+  pca_var <- (pca$sdev^2) / sum(pca$sdev^2) * 100
+  lab_pc1 <- paste0("PC1 (", round(pca_var[1], 1), "%)")
+  lab_pc2 <- paste0("PC2 (", round(pca_var[2], 1), "%)")
+  lab_pc3 <- paste0("PC3 (", round(pca_var[3], 1), "%)")
+  lab_pc4 <- paste0("PC4 (", round(pca_var[4], 1), "%)")
+  # labels for x/y-axis title
+  pc_labs <- setNames(c(lab_pc1, lab_pc2, lab_pc3, lab_pc4), paste0("PC", 1:4))
+
+  # plot
+  p <- d4p |>
+    mutate(Sample = paste0(Sample, "-", !!sym(plot_col))) |>
+    ggplot(aes_string(x = plot_x, y = plot_y, color = plot_col, shape = "Sex", label = "Sample")) +
+    geom_point(size = 2) +
+    #geom_text_repel() +
+    labs(x = pc_labs[plot_x], y = pc_labs[plot_y])
+  
+  if (is.factor(d4p[,plot_col])) {
+    p <- p + scale_color_ucscgb()
+  } else {
+    p <- p + scale_color_viridis_c()
+  }
+  return(p)
+}
+```
+
+With sex chromosomal loci
+
+```{r fig.width=2.5, fig.height=2}
+pca1 <- readRDS(here::here("output", "DNAm", "5mC_smoothed_pca.rds"))
+p1 <- .plot_pca(pca = pca1, bs = bs, plot_col = "PCW", plot_x = "PC1", plot_y = "PC2")
+p1
+```
+
+Without sex chromosomal loci
+
+```{r fig.width=5, fig.height=4}
+pca2 <- readRDS(here::here("output", "DNAm", "5mC_smoothed_pca_autosomes.rds"))
+p2 <- .plot_pca(pca = pca2, bs = bs, plot_col = "PCW", plot_x = "PC1", plot_y = "PC3")
+p2
+```
+
+PC1/PC2
+
+```{r fig.width=5, fig.height=4}
+p3 <- .plot_pca(pca = pca2, bs = bs, plot_col = "PCW", plot_x = "PC1", plot_y = "PC2")
+p3
+```
+
+PC2/PC3
+
+```{r fig.width=5, fig.height=4}
+p4 <- .plot_pca(pca = pca2, bs = bs, plot_col = "PCW", plot_x = "PC2", plot_y = "PC3")
+p4
+```
+
+combine
+
+```{r fig.width=4.4, fig.height=2}
+p1 + p4 +
+  plot_layout(guides = "collect")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "QC_5mC_pca.pdf"),
+  width = 4.4, height = 2
+)
+```
+
+## K562 chromatin states
+
+```{r fig.width=4, fig.height=4}
+gr_cs <- ChIPseeker::readPeakFile("/work/DevM_analysis/data/refATAC/epimap/BSS00762_18_CALLS_segments.bed")
+methy_cs <- readRDS(here::here("output", "DNAm", "5mC_EpiMap_K562_chromatinState_methy.rds"))
+d4p <- data.frame(
+  type = gr_cs$V4,
+  m = rowMeans2(methy_cs),
+  v = rowVars(methy_cs)
+) |> 
+  filter(!is.na(m))
+
+p1 <- d4p |> 
+  ggplot(aes(x = type, y = m)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Mean 5mC level") +
+  coord_flip() +
+  publ_theme
+p2 <- d4p |> 
+  ggplot(aes(x = type, y = v)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Variance of 5mC level") +
+  coord_flip() +
+  publ_theme +
+  theme(axis.text.y = element_blank())
+
+p <- p1 + p2
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "QC_5mC_level_K562_chromatin_states.pdf"),
+  width = 4, height = 4
+)
+```
+
+## Corr with rna/atac
+
+promoters
+
+```{r fig.width=1.5, fig.height=3}
+df1 <- readRDS(here::here("output", "DNAm", "5mC_rna_atac_promoter_corr.rds"))
+
+p1 <- df1 |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  ggplot(aes(x = cmp, y = R)) +
+  geom_boxplot(width = .5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(breaks = seq(-1, 1, by = .1)) +
+  scale_x_discrete(labels = c("ATAC vs. RNA", "DNAm vs. ATAC", "DNAm vs. RNA")) +
+  labs(x = "Cross-modality correlation", y = "Pearson correlations across donors") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p1
+```
+
+all atac peaks
+
+```{r fig.width=1, fig.height=3}
+df2 <- readRDS(here::here("output", "DNAm", "5mC_atac_allPeak_corr.rds"))
+p2 <- df2 |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  ggplot(aes(x = cmp, y = R)) +
+  geom_boxplot(width = .5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(breaks = seq(-1, 1, by = .1)) +
+  scale_x_discrete(labels = c("DNAm vs. ATAC")) +
+  labs(x = NULL, y = "Pearson correlations across donors") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+p2
+```
+
+align
+
+```{r fig.width=2.5, fig.height=3}
+p1 + p2 +
+  plot_layout(widths = c(3, 1))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "QC_5mC_rna_atac_corr.pdf"),
+  width = 2.5, height = 3
+)
+```
+
+## Coarse lineage compositions
+
+```{r fig.width=4, fig.height=3}
+# broad celltypes
+cell_group <- read_tsv(here::here("data/anno_wnn_v51_TO_broad.tsv")) |>
+  mutate(celltype = case_when(
+    celltype == "HSC" ~ "HSC",
+    celltype == "MEM" ~ "Meg-Ery-Mast",
+    celltype == "Mye" ~ "Myeloid",
+    celltype == "Lym" ~ "Lymphoid",
+    celltype == "Other" ~ "Non-blood"
+  )) |> 
+  mutate(celltype = factor(celltype, levels = c("HSC", "Meg-Ery-Mast", "Myeloid", "Lymphoid", "Non-blood")))
+cellmeta <- read_csv("/work/DevM_analysis/01.annotation/10.integration_joint_clean/data/FL_wnn_cellmeta.v02.csv") |>
+  dplyr::select(anno_wnn_v51, donorID) |>
+  filter(donorID %in% sam_info$donorID) |>
+  left_join(cell_group, by = "anno_wnn_v51")
+
+d4p <- cellmeta |>
+  left_join(sam_info, by = "donorID") |> 
+  group_by(PCW, celltype) |>
+  summarise(n = n()) |>
+  mutate(prop = n / sum(n),
+         PCW = factor(PCW))
+
+p <- d4p |>
+  ggplot(aes(x = PCW, y = prop, fill = celltype)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("HSC" = "#E41A1C", "Meg-Ery-Mast" = "#d5a45d",
+                               "Myeloid" = "#5e88ab",
+                               "Lymphoid" = "#799c6a",
+                               "Non-blood" = "#666666")) +
+  labs(y = "Cell proportion", fill = "Lineage") +
+  theme(legend.position = "top")
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Ctype_coase_cell_composition.pdf"),
+  width = 4, height = 3
+)
+```
+
+## ORA of DMRs
+
+DSS DMR p = 0.05
+
+```{r fig.width=4, fig.height=6}
+cg.BP <- readRDS(here::here("output", "DNAm.DSS", "bs_5mC.DSS_DMR_p005.ORA_GOBP.rds"))
+s_cg.BP <- simplify(cg.BP)
+
+p <- dotplot(s_cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60), position = "right") +
+  scale_x_discrete(labels = c("Hypermethylated", "Hypomethylated")) +
+  labs(x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "5mC_DSS_DMR_ORA_GOBP.pdf"),
+  width = 4, height = 6
+)
+```
+
+## ChromVAR scores
+
+```{r}
+df_chromvar <- readRDS("/work/home/project/20231127_DevM/archr_rproj/output/DNAm.chromvar_dmr3/dmr_chromvar_per_cell.rds")
+head(df_chromvar)
+```
+
+Overall
+
+```{r dmr-chromvar-z-by-pcw-ALL, fig.width=4.5, fig.height=4}
+.plot_z_by_pcw <- function(dat = NULL, cell = NULL, yexpand =c(.05, .15)) {
+  f <- y ~ x
+  if(!is.null(cell)) {
+    dat = dat %>% 
+      filter(celltype == cell) %>% 
+      droplevels()
+  } else {
+    cell = "All cells"
+  }
+  
+  df_median <- dat %>%
+    dplyr::group_by(PCW) %>%
+    dplyr::summarise(
+      m_hyper = median(hyperDMR),
+      m_hypo = median(hypoDMR), .groups = "drop"
+    )
+  
+  p1 <- dat %>%
+    ggplot(aes(x = PCW, y = hyperDMR)) +
+    geom_boxplot(outlier.alpha = .2) +
+    geom_smooth(
+      formula = f,
+      data = df_median,
+      aes(x = as.numeric(PCW), y = m_hyper),
+      method = "lm", se = FALSE, color = "#1f77b4", linewidth = 1.2
+    ) +
+    stat_poly_eq(
+      formula = f, method = "lm",
+    data = df_median,
+    aes(
+      x = as.numeric(PCW),
+      y = m_hyper,
+      label = paste(..eq.label.., ..rr.label.., ..p.value.., sep = "~~~")
+    ),
+    parse = TRUE,
+    size = 3,
+    label.x = "left",
+    label.y = "top",
+  ) +
+    scale_y_continuous(expand = expansion(mult = c(yexpand[1], yexpand[2]))) +
+      labs(x = NULL, y = "ChromVAR z (hyper-DMRs)")
+  
+  p2 <- dat %>%
+    ggplot(aes(x = PCW, y = hypoDMR)) +
+    geom_boxplot(outlier.alpha = .2) +
+    geom_smooth(
+      formula = f,
+      data = df_median,
+      aes(x = as.numeric(PCW), y = m_hypo),
+      method = "lm", se = FALSE, color = "#1f77b4", linewidth = 1.2
+    ) +
+    stat_poly_eq(
+      formula = f, method = "lm",
+    data = df_median,
+    aes(
+      x = as.numeric(PCW),
+      y = m_hypo,
+      label = paste(..eq.label.., ..rr.label.., ..p.value.., sep = "~~~")
+    ),
+    parse = TRUE,
+    size = 3,
+    label.x = "left",
+    label.y = "top",
+  ) +
+    scale_y_continuous(expand = expansion(mult = c(yexpand[1], yexpand[2]))) +
+      labs(y = "ChromVAR z (hypo-DMRs)")
+  
+  p1 / p2
+}
+
+p <- .plot_z_by_pcw(dat = df_chromvar)
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "dmr-chromvar-z-by-pcw-ALL.pdf"),
+  width = 4.5, height = 4
+)
+```
+
+HSC
+
+```{r dmr-chromvar-z-by-pcw-HSC, fig.width=5, fig.height=4}
+.plot_z_by_pcw(dat = df_chromvar, cell = "HSC", yexpand = c(.05, .06))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "dmr-chromvar-z-by-pcw-HSC.pdf"),
+  width = 5, height = 4
+)
+```
+
+## ORA of HSC DA-peaks
+
+HSC DA peaks that overlap DMRs
+
+```{r fig.width=5, fig.height=3.5}
+fname <- here::here("output", "DNAm.DMR.olp_HSC_devDA_peaks", "HSC_devDA.olp_DSS_DMR.PG_ORA_GOBP.rds")
+cg.BP <- readRDS(fname)
+s_cg.BP <- simplify(cg.BP)
+
+p <- dotplot(s_cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60)) +
+  scale_x_discrete(labels = c("Hypermethylated", "Hypomethylated")) +
+  scale_size(range = c(1, 6)) +
+  labs(x = NULL) +
+  publ_theme +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5),
+        legend.position = "top")
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_GOBP.pdf"),
+  width = 5, height = 3.5
+)
+```
+
+## Session info

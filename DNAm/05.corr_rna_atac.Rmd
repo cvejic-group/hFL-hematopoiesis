@@ -1,0 +1,240 @@
+---
+title: "DNAm.corr_rna_atac"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# analyze
+library(SummarizedExperiment)
+library(SingleCellExperiment)
+library(scater)
+library(Seurat)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Promoters
+
+promoters
+
+```{r}
+# promoter
+gr_pro <- readRDS(here::here("data/cellranger-2020-A-2.0.0.promoter.rds"))
+gr_pro
+```
+
+DNAm
+
+```{r}
+dat_methy <- readRDS(here::here("output", "DNAm", "5mC_promoter_methy.rds"))
+rownames(dat_methy) <- gr_pro$name
+dim(dat_methy)
+dat_methy[1:3, 1:3]
+```
+
+rna
+
+```{r}
+srat_rna <- readRDS(here::here("output", "RNA.pb_by_donor", "srat_pb_by_donor.rds"))
+dat_rna <- GetAssayData(srat_rna, layer = "data")
+dat_rna <- dat_rna[gr_pro$name, colnames(dat_methy)]
+dat_rna[1:3, 1:3]
+```
+
+atac
+
+```{r}
+se <- readRDS("/work/home/project/20231127_DevM/archr_rproj/output/archr_48FL.pro_peak_mat/GroupSE/PeakMatrix.PB_donorID.rds")
+se <- as(se, "SingleCellExperiment")
+assays(se)$counts <- assays(se)$PeakMatrix
+se <- logNormCounts(se)
+dat_atac <- logcounts(se)
+rownames(dat_atac) <- rowData(se)$name
+dat_atac <- dat_atac[rownames(dat_methy), colnames(dat_methy)]
+dat_atac[1:3, 1:3]
+```
+
+### Plot
+
+```{r}
+df <- data.frame(
+  donorID = colnames(dat_rna),
+  methy_vs_rna = diag(cor(dat_rna, dat_methy, use = "complete")),
+  atac_vs_rna = diag(cor(dat_rna, dat_atac, use = "complete")),
+  methy_vs_atac = diag(cor(dat_methy, dat_atac, use = "complete"))
+)
+saveRDS(df, file = here::here("output", DOCNAME, "5mC_rna_atac_promoter_corr.rds"))
+
+DT::datatable(df, rownames = F)
+```
+
+median
+
+```{r}
+df |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  group_by(cmp) |> 
+  summarise(mid = median(R),
+            ave = mean(R))
+```
+
+plot
+
+```{r fig.width=4, fig.height=4}
+df |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  ggplot(aes(x = cmp, y = R)) +
+  geom_boxplot(width = .5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(breaks = seq(-1, 1, by = .1))+
+  labs(x = "Comparison", y = "Pearson corr.", title = "Cross-modality correlation") +
+  theme_cowplot(font_size = 12)
+```
+
+## ATAC peaks
+
+all peaks
+
+```{r}
+gr_atac <- readRDS("/work/home/project/20231127_DevM/gwas/sLDSC/atac_peaks/archr_peakSet.rds")
+gr_atac
+```
+
+DNAm
+
+```{r}
+dat_methy <- readRDS(here::here("output", "DNAm", "5mC_ATACpeak_methy.rds"))
+
+# peak name
+peak_name <- paste(as.character(seqnames(gr_atac)), as.character(start(gr_atac)), as.character(end(gr_atac)), 
+                   sep = "-")
+rownames(dat_methy) <- peak_name
+dim(dat_methy)
+dat_methy[1:3, 1:3]
+```
+
+atac
+
+```{r}
+se <- readRDS("/work/home/project/20231127_DevM/archr_rproj/output/archr_48FL/GroupSE/PeakMatrix.PB_donorID.rds")
+se <- as(se, "SingleCellExperiment")
+assays(se)$counts <- assays(se)$PeakMatrix
+se <- logNormCounts(se)
+dat_atac <- logcounts(se)
+
+# names
+df <- rowData(se) |> 
+  as.data.frame() |> 
+  mutate(
+    name = paste(as.character(seqnames), as.character(start), as.character(end), sep = "-")
+  )
+rownames(dat_atac) <- df$name
+dat_atac <- dat_atac[rownames(dat_methy), colnames(dat_methy)]
+dat_atac[1:3, 1:3]
+```
+
+### Plot
+
+```{r}
+df <- data.frame(
+  donorID = colnames(dat_methy),
+  methy_vs_atac = diag(cor(dat_methy, dat_atac, use = "complete"))
+)
+
+saveRDS(df, file = here::here("output", DOCNAME, "5mC_atac_allPeak_corr.rds"))
+DT::datatable(df, rownames = F)
+```
+
+median
+
+```{r}
+df |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  group_by(cmp) |> 
+  summarise(mid = median(R),
+            ave = mean(R))
+```
+
+plot
+
+```{r fig.width=2, fig.height=4}
+df |> 
+  pivot_longer(cols = contains("_vs_"), names_to = "cmp", values_to = "R") |> 
+  ggplot(aes(x = cmp, y = R)) +
+  geom_boxplot(width = .5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(breaks = seq(-1, 1, by = .1))+
+  labs(x = "Comparison", y = "Pearson corr.", title = "Cross-modality correlation") +
+  theme_cowplot(font_size = 12)
+```
+
+## Session info

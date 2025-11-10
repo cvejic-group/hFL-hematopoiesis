@@ -1,0 +1,444 @@
+---
+title: "DNAm.DMR.olp_HSC_devDA_peaks"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm.DMR.olp_HSC_devDA_peaks"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggVennDiagram)
+library("UpSetR")
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# DNAm
+library(Seurat)
+library(bsseq)
+
+# TF
+library(SummarizedExperiment)
+library(monaLisa)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(JASPAR2024)
+library(TFBSTools)
+
+# anno
+library(ChIPseeker)
+library(org.Hs.eg.db)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load
+
+HSC PG links
+
+```{r}
+df_pg <- readRDS(here::here("output", "HSC.glmmPG", "HSC.glmmPG_FDR20.rds")) |>
+  dplyr::select(peak, gene) |>
+  group_by(peak) |>
+  summarise(
+    gene = paste(gene, collapse = ","), .groups = "drop"
+  )
+head(df_pg[, 1:2])
+```
+
+DA peak anno
+
+```{r}
+peakAnnoAll <- readRDS(here::here("output", "HSC.dev_da_mcScale", "HSC_dev_da.peak_all_anno.rds"))
+peak_anno <- data.frame(peakAnnoAll@anno) |> 
+  dplyr::select(peak = V4, distanceToTSS, ENTREZID, SYMBOL, GENENAME)
+```
+
+olp
+
+```{r}
+df_olp <- read_tsv("/work/home/project/20231127_DevM/DNAm/olp.HSC_dev_da.DMR.tsv", col_names = FALSE) |>
+  # filter(X6 != ".") |>
+  dplyr::select(peak = X4, beta = X5, dmr = X9, dmr_len = X10, dmr_cg = X11, dmr_stat = X12) |>
+  mutate(
+    DA = case_when(
+      beta > 0 ~ "DA-up",
+      TRUE ~ "DA-down"
+    )
+  )
+head(df_olp)
+```
+
+## Olp
+
+from Intervene
+
+```{r fig.width=5, fig.height=5, dev=c('png', 'pdf')}
+expressionInput <- c("hypo-DMR" = 4659, "hyper-DMR" = 14487, "hyper-DMR&hypo-DMR" = 0, "DA-down" = 4833, "DA-down&hypo-DMR" = 20, "DA-down&hyper-DMR" = 358, "DA-down&hyper-DMR&hypo-DMR" = 0, "DA-up" = 6342, "DA-up&hypo-DMR" = 282, "DA-up&hyper-DMR" = 38, "DA-up&hyper-DMR&hypo-DMR" = 0, "DA-up&DA-down" = 0, "DA-up&DA-down&hypo-DMR" = 0, "DA-up&DA-down&hyper-DMR" = 0, "DA-up&DA-down&hyper-DMR&hypo-DMR" = 0)
+upset(fromExpression(expressionInput), nsets = 4, nintersects = 30, show.numbers = "yes", main.bar.color = "#ea5d4e", sets.bar.color = "#317eab", empty.intersections = NULL, order.by = "freq", number.angles = 0, mainbar.y.label = "No. of Intersections", sets.x.label = "Set size")
+```
+
+### Fisher exact
+
+Compared with DA-up, are DA-dn peaks more enriched in hyper-DMRs?
+
+```{r}
+# DA-dn olp with hyper-DMRs
+a <- df_olp |>
+  filter(beta < 0, dmr != ".", dmr_stat > 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+# DA-dn not olp with hyper-DMRs
+b1 <- df_olp |>
+  filter(beta < 0, dmr == ".") |>
+  pull(peak) |>
+  unique() |>
+  length()
+b2 <- df_olp |>
+  filter(beta < 0, dmr != ".", dmr_stat < 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+b <- b1 + b2
+
+# DA-up olp with hyper-DMRs
+c <- df_olp |>
+  filter(beta > 0, dmr != ".", dmr_stat > 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+# DA-up not olp with hyper-DMRs
+d1 <- df_olp |>
+  filter(beta > 0, dmr == ".") |>
+  pull(peak) |>
+  unique() |>
+  length()
+d2 <- df_olp |>
+  filter(beta > 0, dmr != ".", dmr_stat < 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+d <- d1 + d2
+
+mat <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+rownames(mat) <- c("DA-dn", "DA-up")
+colnames(mat) <- c("hyper-DMR", "not")
+mat
+fisher.test(mat, alternative = "two.sided")
+```
+
+Compared with DA-dn, are DA-up peaks more enriched in hypo-DMRs?
+
+```{r}
+# DA-up olp with hypo-DMRs
+a <- df_olp |>
+  filter(beta > 0, dmr != ".", dmr_stat < 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+# DA-up not olp with hypo-DMRs
+b1 <- df_olp |>
+  filter(beta > 0, dmr == ".") |>
+  pull(peak) |>
+  unique() |>
+  length()
+b2 <- df_olp |>
+  filter(beta > 0, dmr != ".", dmr_stat > 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+b <- b1 + b2
+
+# DA-dn olp with hypo-DMRs
+c <- df_olp |>
+  filter(beta < 0, dmr != ".", dmr_stat < 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+# DA-dn not olp with hypo-DMRs
+d1 <- df_olp |>
+  filter(beta < 0, dmr == ".") |>
+  pull(peak) |>
+  unique() |>
+  length()
+d2 <- df_olp |>
+  filter(beta < 0, dmr != ".", dmr_stat > 0) |>
+  pull(peak) |>
+  unique() |>
+  length()
+d <- d1 + d2
+
+mat <- matrix(c(a, b, c, d), nrow = 2, byrow = TRUE)
+rownames(mat) <- c("DA-up", "DA-dn")
+colnames(mat) <- c("hypo-DMR", "not")
+mat
+
+fisher.test(mat, alternative = "two.sided")
+```
+
+```{r fig.width=3, fig.height=4}
+df_olp |>
+  filter(dmr != ".") |>
+  mutate(dmr_stat = as.numeric(dmr_stat)) |>
+  ggplot(aes(x = DA, y = dmr_stat)) +
+  geom_boxplot() +
+  stat_compare_means() +
+  theme_cowplot()
+```
+
+## target-genes {.tabset}
+
+target genes of the peaks tagged by DMRs
+
+only keep olp where DA and DMRs had different change directions
+
+```{r}
+df <- df_olp |>
+  filter(dmr != ".") |>
+  mutate(
+    dmr_len = as.numeric(dmr_len),
+    dmr_cg = as.numeric(dmr_cg),
+    dmr_stat = as.numeric(dmr_stat)
+  ) |>
+  filter(sign(beta) != sign(dmr_stat)) |>
+  left_join(df_pg, by = "peak") |>
+  filter(!is.na(gene))
+table(df$DA)
+```
+
+ORA
+
+```{r}
+compareList <- list(
+  DA_dn = df |>
+    filter(beta < 0) |>
+    pull(gene) |> str_split(",") |> unlist() |> unique() |>
+    bitr(fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = "org.Hs.eg.db") |>
+    pull(ENTREZID),
+  DA_up = df |>
+    filter(beta > 0) |>
+    pull(gene) |> str_split(",") |> unlist() |> unique() |>
+    bitr(fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = "org.Hs.eg.db") |>
+    pull(ENTREZID)
+)
+list(
+  DA_dn = df |>
+    filter(beta < 0) |>
+    pull(gene) |> str_split(",") |> unlist() |> unique(),
+  DA_up = df |>
+    filter(beta > 0) |>
+    pull(gene) |> str_split(",") |> unlist() |> unique()
+)
+lengths(compareList)
+```
+
+```{r eval=FALSE}
+# ORA, KEGG
+ck <- compareCluster(compareList, fun = "enrichKEGG", organism = "hsa", pvalueCutoff = 0.05)
+if (!is.null(ck)) {
+  ck <- setReadable(ck, "org.Hs.eg.db", keyType = "ENTREZID")
+  saveRDS(ck, file = here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_KEGG.rds"))
+  as.data.frame(ck) |>
+    write_tsv(here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_KEGG.tsv"))
+}
+
+# ORA, GO-BP
+cg.BP <- compareCluster(compareList,
+  fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "BP",
+  pAdjustMethod = "BH", pvalueCutoff = 0.05, readable = T
+)
+if (!is.null(cg.BP)) {
+  saveRDS(cg.BP, file = here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_GOBP.rds"))
+  as.data.frame(cg.BP) |>
+    write_tsv(here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_GOBP.tsv"))
+}
+```
+
+### KEGG
+
+```{r, fig.width=7, fig.height=8}
+fname <- here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_KEGG.rds")
+if (file.exists(fname)) {
+  ck <- readRDS(fname)
+  dotplot(ck, showCategory = 10, title = "KEGG")
+}
+```
+
+### GO-BP
+
+```{r, fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.PG_ORA_GOBP.rds")
+cg.BP <- readRDS(fname)
+s_cg.BP <- simplify(cg.BP)
+dotplot(cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+```
+
+```{r, fig.width=8, fig.height=8}
+dotplot(s_cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+```
+
+```{r}
+DT::datatable(cg.BP@compareClusterResult)
+```
+
+## genes near the peaks {.tabset}
+
+target genes of peaks olpping with DMRs
+
+only keep olp where DA and DMRs had different change directions
+
+```{r}
+df <- df_olp |>
+  filter(dmr != ".") |>
+  mutate(
+    dmr_len = as.numeric(dmr_len),
+    dmr_cg = as.numeric(dmr_cg),
+    dmr_stat = as.numeric(dmr_stat)
+  ) |>
+  filter(sign(beta) != sign(dmr_stat)) |>
+  left_join(peak_anno, by = "peak") |> 
+  filter(abs(distanceToTSS) < 2000, !is.na(ENTREZID))
+table(df$DA)
+```
+
+ORA
+
+```{r}
+compareList <- list(
+  DA_dn = df |>
+    filter(beta < 0) |>
+    pull(ENTREZID) |> unique(),
+  DA_up = df |>
+    filter(beta > 0) |>
+    pull(ENTREZID) |> unique()
+)
+list(
+  DA_dn = df |>
+    filter(beta < 0) |>
+    pull(SYMBOL) |> unique(),
+  DA_up = df |>
+    filter(beta > 0) |>
+    pull(SYMBOL) |> unique()
+)
+lengths(compareList)
+```
+
+```{r eval=FALSE}
+# ORA, KEGG
+ck <- compareCluster(compareList, fun = "enrichKEGG", organism = "hsa", pvalueCutoff = 0.05)
+if (!is.null(ck)) {
+  ck <- setReadable(ck, "org.Hs.eg.db", keyType = "ENTREZID")
+  saveRDS(ck, file = here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_KEGG.rds"))
+  as.data.frame(ck) |>
+    write_tsv(here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_KEGG.tsv"))
+}
+
+# ORA, GO-BP
+cg.BP <- compareCluster(compareList,
+  fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "BP",
+  pAdjustMethod = "BH", pvalueCutoff = 0.05, readable = T
+)
+if (!is.null(cg.BP)) {
+  saveRDS(cg.BP, file = here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_GOBP.rds"))
+  as.data.frame(cg.BP) |>
+    write_tsv(here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_GOBP.tsv"))
+}
+```
+
+### KEGG
+
+```{r, fig.width=7, fig.height=8}
+fname <- here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_KEGG.rds")
+if (file.exists(fname)) {
+  ck <- readRDS(fname)
+  dotplot(ck, showCategory = 10, title = "KEGG")
+}
+```
+
+### GO-BP
+
+```{r, fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, "HSC_devDA.olp_DSS_DMR.nearbyGene_ORA_GOBP.rds")
+cg.BP <- readRDS(fname)
+s_cg.BP <- simplify(cg.BP)
+dotplot(cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+```
+
+```{r, fig.width=8, fig.height=6}
+dotplot(s_cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+```
+
+```{r}
+DT::datatable(cg.BP@compareClusterResult)
+```
+
+## Session info

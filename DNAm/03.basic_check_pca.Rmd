@@ -1,0 +1,494 @@
+---
+title: "03.basic_check_pca"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# DNAm
+library(data.table)
+library(bsseq)
+library(BiocParallel)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+source(here::here("utils/DNAm.R"))
+```
+
+## Load data
+
+Filter'ed loci
+
+```{r}
+bs_5mC_filt <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC_filt.qs2"))
+bs_5mC_filt
+```
+
+No sex chroms
+
+```{r}
+bs_5mC_filt2 <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC_filt.autosomes.qs2"))
+bs_5mC_filt2
+```
+
+sam info
+
+```{r}
+sam_info <- as.data.frame(pData(bs_5mC_filt)) |>
+  rownames_to_column("Sample") |> 
+  mutate(PCW = as.numeric(as.character(PCW)))
+head(sam_info)
+```
+
+## Common funcs
+
+```{r}
+.plot_pca <- function(pca = NULL, dat = NULL, sam_info = NULL, plot_col = NULL) {
+  d4p <- data.frame(
+    Sample = colnames(dat),
+    PC1 = pca$x[, 1],
+    PC2 = pca$x[, 2],
+    PC3 = pca$x[, 3],
+    PC4 = pca$x[, 4]
+  ) |>
+    left_join(sam_info, by = "Sample")
+
+  # Percent variance explained
+  pca_var <- (pca$sdev^2) / sum(pca$sdev^2) * 100
+  lab_pc1 <- paste0("PC1 (", round(pca_var[1], 1), "%)")
+  lab_pc2 <- paste0("PC2 (", round(pca_var[2], 1), "%)")
+  lab_pc3 <- paste0("PC3 (", round(pca_var[3], 1), "%)")
+  lab_pc4 <- paste0("PC4 (", round(pca_var[4], 1), "%)")
+
+  # plot
+  p1 <- d4p |>
+    mutate(Sample = paste0(Sample, "-", !!sym(plot_col))) |>
+    ggplot(aes_string(x = "PC1", y = "PC2", color = plot_col, shape = "Sex", label = "Sample")) +
+    geom_point(size = 3) +
+    geom_text_repel() +
+    labs(title = "PCA of 5mC methylation", x = lab_pc1, y = lab_pc2)
+  p2 <- d4p |>
+    mutate(Sample = paste0(Sample, "-", !!sym(plot_col))) |>
+    ggplot(aes_string(x = "PC3", y = "PC4", color = plot_col, shape = "Sex", label = "Sample")) +
+    geom_point(size = 3) +
+    geom_text_repel() +
+    labs(title = "PCA of 5mC methylation", x = lab_pc3, y = lab_pc4)
+  
+  if (is.factor(d4p[,plot_col])) {
+    p1 <- p1 + scale_color_ucscgb()
+    p2 <- p2 + scale_color_ucscgb()
+  } else {
+    p1 <- p1 + scale_color_viridis_c()
+    p2 <- p2 + scale_color_viridis_c()
+  }
+  p <- p1 + p2
+  return(p)
+}
+
+.do_mds <- function(dat = NULL, sam_info = NULL, n_top = 5000000) {
+  row_vars <- matrixStats::rowVars(dat)
+  # choose top 50k most variable CpGs
+  top_idx <- order(row_vars, decreasing = TRUE)[1:min(n_top, length(row_vars))]
+  dat <- dat[top_idx, ]
+
+  dist_mat <- dist(t(dat)) # distance between samples
+  mds <- cmdscale(dist_mat)
+
+  mds_df <- data.frame(
+    Sample = colnames(dat),
+    MDS1 = mds[, 1],
+    MDS2 = mds[, 2]
+  ) |>
+    left_join(sam_info, by = "Sample")
+
+  p1 <- ggplot(mds_df, aes(x = MDS1, y = MDS2, shape = Sex, color = PCW, label = Sample)) +
+    geom_point(size = 4) +
+    geom_text_repel() +
+    scale_color_viridis_c() +
+    labs(title = "MDS of 5mC methylation")
+  p2 <- ggplot(mds_df, aes(x = MDS1, y = MDS2, shape = Sex, color = SortBatch, label = Sample)) +
+    geom_point(size = 4) +
+    geom_text_repel() +
+    scale_color_ucscgb() +
+    labs(title = "MDS of 5mC methylation")
+  p <- p1 + p2
+  return(p)
+}
+```
+
+## With sex chrom {.tabset}
+
+### Raw signal {.tabset}
+
+```{r}
+meth_5mc <- getMeth(bs_5mC_filt, type = "raw")
+meth_5mc[is.na(meth_5mc)] <- 0
+```
+
+#### PCA
+
+```{r}
+pca <- .do_pca(dat = meth_5mc)
+```
+
+screen plot
+
+```{r fig.width=4, fig.height=5}
+.plot_screen(pca = pca)
+```
+
+PCW
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc, sam_info = sam_info, plot_col = "PCW")
+```
+
+Sort batch
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc, sam_info = sam_info, plot_col = "SortBatch")
+```
+
+Sex
+
+```{r fig.width=12, fig.height=4}
+d4p <- as.data.frame(pca$x) |> 
+  rownames_to_column("Sample") |> 
+  left_join(sam_info, by = "Sample") |> 
+  pivot_longer(cols = paste0("PC", 1:ncol(meth_5mc)), names_to = "PC", values_to = "value") |> 
+  mutate(PC = factor(PC, levels = paste0("PC", 1:ncol(meth_5mc))),
+         PCW = factor(PCW))
+
+d4p |> 
+  ggplot(aes(x = Sex, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_grid(.~PC)
+```
+
+PCW
+
+```{r fig.width=12, fig.height=8}
+p <- d4p |> 
+  ggplot(aes(x = PCW, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+p
+```
+
+SortBatch
+
+```{r fig.width=12, fig.height=8}
+d4p |> 
+  ggplot(aes(x = SortBatch, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+```
+
+#### MDS
+
+```{r fig.width=10, fig.height=4}
+.do_mds(dat = meth_5mc, sam_info = sam_info)
+```
+
+### Smoothed {.tabset}
+
+```{r}
+meth_5mc_s <- getMeth(bs_5mC_filt, type = "smooth")
+meth_5mc_s[is.na(meth_5mc_s)] <- 0
+```
+
+#### PCA
+
+```{r}
+pca <- .do_pca(dat = meth_5mc_s)
+
+saveRDS(pca, file = here::here("output", DOCNAME, "5mC_smoothed_pca.rds"))
+```
+
+screen plot
+
+```{r fig.width=4, fig.height=5}
+.plot_screen(pca = pca)
+```
+
+PCW
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc_s, sam_info = sam_info, plot_col = "PCW")
+```
+
+Sort batch
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc_s, sam_info = sam_info, plot_col = "SortBatch")
+```
+
+Sex
+
+```{r fig.width=12, fig.height=4}
+d4p <- as.data.frame(pca$x) |> 
+  rownames_to_column("Sample") |> 
+  left_join(sam_info, by = "Sample") |> 
+  pivot_longer(cols = paste0("PC", 1:ncol(meth_5mc_s)), names_to = "PC", values_to = "value") |> 
+  mutate(PC = factor(PC, levels = paste0("PC", 1:ncol(meth_5mc_s))),
+         PCW = factor(PCW))
+
+d4p |> 
+  ggplot(aes(x = Sex, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_grid(.~PC)
+```
+
+PCW
+
+```{r fig.width=12, fig.height=8}
+p <- d4p |> 
+  ggplot(aes(x = PCW, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+p
+```
+
+SortBatch
+
+```{r fig.width=12, fig.height=8}
+d4p |> 
+  ggplot(aes(x = SortBatch, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+```
+
+#### MDS
+
+```{r fig.width=10, fig.height=4}
+.do_mds(dat = meth_5mc_s, sam_info = sam_info)
+```
+
+## Without sex chrom {.tabset}
+
+### Raw {.tabset}
+
+```{r}
+meth_5mc <- getMeth(bs_5mC_filt2, type = "raw")
+meth_5mc[is.na(meth_5mc)] <- 0
+```
+
+#### PCA
+
+```{r}
+pca <- .do_pca(dat = meth_5mc)
+```
+
+screen plot
+
+```{r fig.width=4, fig.height=5}
+.plot_screen(pca = pca)
+```
+
+PCW
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc, sam_info = sam_info, plot_col = "PCW")
+```
+
+Sort batch
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc, sam_info = sam_info, plot_col = "SortBatch")
+```
+
+Sex
+
+```{r fig.width=12, fig.height=4}
+d4p <- as.data.frame(pca$x) |> 
+  rownames_to_column("Sample") |> 
+  left_join(sam_info, by = "Sample") |> 
+  pivot_longer(cols = paste0("PC", 1:ncol(meth_5mc)), names_to = "PC", values_to = "value") |> 
+  mutate(PC = factor(PC, levels = paste0("PC", 1:ncol(meth_5mc))),
+         PCW = factor(PCW))
+
+d4p |> 
+  ggplot(aes(x = Sex, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_grid(.~PC)
+```
+
+PCW
+
+```{r fig.width=12, fig.height=8}
+p <- d4p |> 
+  ggplot(aes(x = PCW, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+p
+```
+
+SortBatch
+
+```{r fig.width=12, fig.height=8}
+d4p |> 
+  ggplot(aes(x = SortBatch, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+```
+
+#### MDS
+
+```{r fig.width=10, fig.height=4}
+.do_mds(dat = meth_5mc, sam_info = sam_info)
+```
+
+### Smoothed {.tabset}
+
+```{r}
+meth_5mc_s <- getMeth(bs_5mC_filt2, type = "smooth")
+meth_5mc_s[is.na(meth_5mc_s)] <- 0
+```
+
+#### PCA
+
+```{r}
+pca <- .do_pca(dat = meth_5mc_s)
+
+saveRDS(pca, file = here::here("output", DOCNAME, "5mC_smoothed_pca_autosomes.rds"))
+```
+
+screen plot
+
+```{r fig.width=4, fig.height=5}
+.plot_screen(pca = pca)
+```
+
+PCW
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc_s, sam_info = sam_info, plot_col = "PCW")
+```
+
+Sort batch
+
+```{r fig.width=10, fig.height=4}
+.plot_pca(pca = pca, dat = meth_5mc_s, sam_info = sam_info, plot_col = "SortBatch")
+```
+
+Sex
+
+```{r fig.width=12, fig.height=4}
+d4p <- as.data.frame(pca$x) |> 
+  rownames_to_column("Sample") |> 
+  left_join(sam_info, by = "Sample") |> 
+  pivot_longer(cols = paste0("PC", 1:ncol(meth_5mc_s)), names_to = "PC", values_to = "value") |> 
+  mutate(PC = factor(PC, levels = paste0("PC", 1:ncol(meth_5mc_s))),
+         PCW = factor(PCW))
+
+d4p |> 
+  ggplot(aes(x = Sex, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_grid(.~PC)
+```
+
+PCW
+
+```{r fig.width=12, fig.height=8}
+p <- d4p |> 
+  ggplot(aes(x = PCW, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+p
+```
+
+SortBatch
+
+```{r fig.width=12, fig.height=8}
+d4p |> 
+  ggplot(aes(x = SortBatch, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(label = "p.signif") +
+  facet_wrap(.~PC, ncol = 9)
+```
+
+#### MDS
+
+```{r fig.width=10, fig.height=4}
+.do_mds(dat = meth_5mc_s, sam_info = sam_info)
+```
+
+## Session info

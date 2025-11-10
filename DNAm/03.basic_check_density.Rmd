@@ -1,0 +1,241 @@
+---
+title: "03.basic_check_density"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# DNAm
+library(data.table)
+library(bsseq)
+library(BiocParallel)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+#source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+Raw data
+
+```{r}
+bs_5mC <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC_raw.qs2"))
+bs_5mC
+```
+
+sam info
+
+```{r}
+sam_info <- as.data.frame(pData(bs_5mC)) |>
+  rownames_to_column("Sample")
+
+head(sam_info)
+```
+
+## Data summary
+
+donor number per PCW
+
+```{r}
+sam_info |> 
+  group_by(PCW) |> 
+  summarise(n = n()) |> 
+  DT::datatable(rownames = FALSE)
+```
+
+## 5mC {.tabset}
+
+Load filtered data
+
+```{r}
+bs_5mC_filt <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC_filt.qs2"))
+bs_5mC_filt
+```
+
+### Raw data
+
+```{r}
+meth_5mc <- getMeth(bs_5mC_filt, type="raw")
+meth_5mc[is.na(meth_5mc)] <- 0
+```
+
+```{r fig.width=7, fig.height=5, eval=FALSE}
+boxplot(meth_5mc, names=colnames(meth_5mc), ylab="Methylation fraction", main="5mC distribution", las = 2)
+```
+
+```{r fig.width=24, fig.height=20, sep-raw}
+p_lst <- lapply(colnames(meth_5mc), function(x){
+  data.frame(value = meth_5mc[,x]) |> 
+    ggplot(aes(x = value)) +
+    geom_density(adjust = 2, color = "black") +
+    labs(x = "Methylation proportion", y = "Density", title = x)
+})
+
+p <- p_lst |> 
+  wrap_plots(ncol = 6)
+p
+```
+
+one density
+
+```{r fig.width=6, fig.height=4, one-raw}
+meth_5mc <- as.data.frame(meth_5mc)
+meth_5mc$barcode <- paste0("a", 1:nrow(meth_5mc))
+x <- meth_5mc |> 
+  pivot_longer(cols = starts_with("FL"), names_to = "donor", values_to = "value")
+
+x |> 
+  ggplot(aes(x = value, color = donor)) +
+  geom_density() +
+  scale_color_manual(values = rep("gray", length(unique(x$donor)))) +
+  labs(x = "5mC proportion") +
+  theme(legend.position = "none")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "5mC_density_raw.pdf"),
+  width = 6, height = 4
+)
+```
+
+```{r fig.width=6, fig.height=4, one-raw-2}
+x |> 
+  ggplot(aes(x = value, color = donor)) +
+  geom_density() +
+  scale_color_manual(values = rep("gray", length(unique(x$donor)))) +
+  labs(x = "5mC proportion") +
+  theme(legend.position = "none")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "5mC_density_raw.adjust_2.pdf"),
+  width = 6, height = 4
+)
+```
+
+### Smoothed
+
+```{r}
+meth_5mc_s <- getMeth(bs_5mC_filt, type="smooth")
+meth_5mc_s[is.na(meth_5mc_s)] <- 0
+```
+
+```{r fig.width=7, fig.height=5, eval=FALSE}
+boxplot(meth_5mc_s, names=colnames(meth_5mc_s), ylab="Methylation fraction", main="5mC distribution", las = 2)
+```
+
+```{r fig.width=24, fig.height=20, sep-s}
+p_lst <- lapply(colnames(meth_5mc_s), function(x){
+  data.frame(value = meth_5mc_s[,x]) |> 
+    ggplot(aes(x = value)) +
+    geom_density(color = "black") +
+    labs(x = "5mC Methylation proportion", y = "Density", title = x)
+})
+
+p <- p_lst |> 
+  wrap_plots(ncol = 6)
+p
+```
+
+one density
+
+```{r fig.width=6, fig.height=4, one-s}
+meth_5mc_s <- as.data.frame(meth_5mc_s)
+meth_5mc_s$barcode <- paste0("a", 1:nrow(meth_5mc_s))
+x <- meth_5mc_s |> 
+  pivot_longer(cols = starts_with("FL"), names_to = "donor", values_to = "value")
+
+x |> 
+  ggplot(aes(x = value, color = donor)) +
+  geom_density() +
+  scale_color_manual(values = rep("gray", length(unique(x$donor)))) +
+  labs(x = "5mC proportion") +
+  theme(legend.position = "none")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "5mC_density_smoothed.pdf"),
+  width = 6, height = 4
+)
+```
+
+```{r fig.width=6, fig.height=4, one-s-2}
+x |> 
+  ggplot(aes(x = value, color = donor)) +
+  geom_density(adjust = 2) +
+  scale_color_manual(values = rep("gray", length(unique(x$donor)))) +
+  labs(x = "5mC proportion") +
+  theme(legend.position = "none")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "5mC_density_smoothed.adjust_2.pdf"),
+  width = 6, height = 4
+)
+```
+
+## Session info
+

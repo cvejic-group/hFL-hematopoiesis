@@ -1,0 +1,189 @@
+---
+title: "04.genomic_elements"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# analyze
+library(matrixStats)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## ENCODE cCREs
+
+ENCODE cCREs
+
+```{r}
+# encode cCREs
+gr_re <- ChIPseeker::readPeakFile("/work/DevM_analysis/data/refATAC/ENCODE_SCREEN/GRCh38-cCREs.bed")
+gr_re
+```
+
+DNAm
+
+```{r}
+methy_re <- readRDS(here::here("output", "DNAm", "5mC_ENCODE_cCRE_methy.rds"))
+```
+
+Plot
+
+```{r}
+df <- data.frame(
+  type = gr_re$V6,
+  m = rowMeans2(methy_re),
+  v = rowVars(methy_re)
+) |> 
+  filter(!is.na(m))
+dim(df)
+```
+
+```{r fig.width=6, fig.height=4}
+df |> 
+  ggplot(aes(x = type, y = m)) +
+  geom_boxplot() +
+  theme_cowplot(font_size = 12)
+```
+
+```{r fig.width=6, fig.height=4}
+p1 <- df |> 
+  ggplot(aes(x = type, y = m)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Mean 5mC level") +
+  coord_flip() +
+  theme_cowplot(font_size = 12)
+
+p2 <- df |> 
+  ggplot(aes(x = type, y = v)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Variance of 5mC level") +
+  coord_flip() +
+  theme_cowplot(font_size = 12)
+
+p1 + p2
+```
+
+## K562 chromatin states
+
+K562 chromatin states
+
+```{r}
+# encode cCREs
+gr_cs <- ChIPseeker::readPeakFile("/work/DevM_analysis/data/refATAC/epimap/BSS00762_18_CALLS_segments.bed")
+gr_cs
+```
+
+DNAm
+
+```{r}
+methy_cs <- readRDS(here::here("output", "DNAm", "5mC_EpiMap_K562_chromatinState_methy.rds"))
+```
+
+Plot
+
+```{r}
+df <- data.frame(
+  type = gr_cs$V4,
+  m = rowMeans2(methy_cs),
+  v = rowVars(methy_cs)
+) |> 
+  filter(!is.na(m))
+dim(df)
+```
+
+```{r fig.width=8, fig.height=4}
+df |> 
+  ggplot(aes(x = type, y = m)) +
+  geom_boxplot()
+```
+
+```{r fig.width=7, fig.height=7}
+p1 <- df |> 
+  ggplot(aes(x = type, y = m)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Mean 5mC level") +
+  coord_flip() +
+  theme_cowplot(font_size = 12)
+  
+
+p2 <- df |> 
+  ggplot(aes(x = type, y = v)) +
+  geom_boxplot(outliers = FALSE) +
+  labs(x = NULL, y = "Variance of 5mC level") +
+  coord_flip() +
+  theme_cowplot(font_size = 12)
+
+p1 + p2
+```
+
+## Session info
+

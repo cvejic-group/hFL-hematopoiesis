@@ -1,0 +1,591 @@
+---
+title: "DNAm.chromvar_dmr"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm.chromvar_dmr"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(scattermore)
+library(ggrastr)
+library(ComplexHeatmap)
+library(ggrepel)
+
+# patch
+library(patchwork)
+library(cowplot)
+theme_set(theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+))
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+#library(Seurat)
+library(ArchR)
+```
+
+```{r source, cache = FALSE}
+print(1)
+range01 <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Set ArchR
+
+```{r set-ArchR, cache=FALSE}
+# set up
+set.seed(1)
+# default number of threads
+addArchRThreads(threads = 12)
+# add a reference genome annotation for ArchR
+addArchRGenome("hg38")
+# chr prefix to exclude KI/GL scaffolds
+addArchRChrPrefix(chrPrefix = TRUE)
+```
+
+## Load data
+
+Load saved proj
+
+```{r load-proj, cache=FALSE}
+proj_dir <- "archr_48FL.8to18"
+proj <- loadArchRProject(path = here::here("output", proj_dir))
+proj
+```
+
+Change the order of celltypes
+
+```{r}
+df_cellname <- data.frame(
+  num = 1:36,
+  cell = c(
+    "HSC", "GP", "Granulocyte",
+    "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
+    "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
+    "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
+    "LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+    "NK", "ILCP", "T",
+    "Hepatocyte", "Endothelia"
+  )
+) %>%
+  left_join(
+    as.data.frame.table(table(proj$celltype)) %>% dplyr::rename(cell = Var1),
+    by = "cell"
+  ) %>%
+  mutate(
+    cell_new = paste0(num, "_", cell, " (", Freq, ")")
+  ) %>%
+  column_to_rownames("cell")
+
+proj$celltype2 <- df_cellname[proj$celltype, "cell_new"]
+table(proj$celltype2, useNA = "ifany")
+```
+
+cell num by pcw
+
+```{r}
+df_numByPCW <- getCellColData(proj) %>%
+  as.data.frame() %>% 
+  group_by(PCW, celltype) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::mutate(prop = n/sum(n)) %>% 
+  mutate(celltype = factor(celltype, levels = rownames(df_cellname)))
+head(df_numByPCW)
+```
+
+```{r}
+# broad celltypes
+cell_group <- read_tsv("/work/home/project/20231127_DevM/devm_r432/data/anno_wnn_v51_TO_broad.tsv") |>
+  mutate(cell2 = case_when(
+    celltype == "HSC" ~ "HSC",
+    celltype == "MEM" ~ "Meg-Ery-Mast",
+    celltype == "Mye" ~ "Myeloid",
+    celltype == "Lym" ~ "Lymphoid",
+    celltype == "Other" ~ "Non-blood"
+  )) |> 
+  dplyr::mutate(cell2 = factor(cell2, levels = c("HSC", "Meg-Ery-Mast", "Myeloid", "Lymphoid", "Non-blood"))) %>% 
+  dplyr::select(celltype = anno_wnn_v51, cell2)
+head(cell_group)
+```
+
+## by celltype
+
+The deviations
+
+```{r fig.width=4, fig.height=10}
+p <- plotGroups(
+  ArchRProj = proj,
+  groupBy = "celltype2",
+  colorBy = "DSSDMRMatrix",
+  name = c("deviations:hyperDMR", "deviations:hypoDMR"),
+  imputeWeights = NULL
+)
+
+p2 <- lapply(seq_along(p), function(x) {
+  if (x != 1) {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  } else {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  }
+})
+do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(1.5, rep(1, length(p2) - 1))), p2))
+```
+
+The Z score
+
+```{r dmr-chromvar-z-by-cell, fig.width=4, fig.height=10, dev=c('png', 'pdf')}
+p <- plotGroups(
+  ArchRProj = proj,
+  groupBy = "celltype2",
+  colorBy = "DSSDMRMatrix",
+  name = c("z:hyperDMR", "z:hypoDMR"),
+  imputeWeights = NULL,
+  maxCells = 500000
+)
+
+p2 <- lapply(seq_along(p), function(x) {
+  if (x != 1) {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  } else {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  }
+})
+do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(1.5, rep(1, length(p2) - 1))), p2))
+```
+
+## by pcw {.tabset}
+
+```{r}
+p <- plotGroups(
+  ArchRProj = proj,
+  groupBy = "celltype",
+  colorBy = "DSSDMRMatrix",
+  name = c("z:hyperDMR", "z:hypoDMR"),
+  imputeWeights = NULL,
+  maxCells = 500000
+)
+
+cellmeta <- getCellColData(proj) %>%
+  as.data.frame() %>%
+  rownames_to_column("barcode") %>%
+  dplyr::select(barcode, PCW)
+
+df_hyper <- p$`z:hyperDMR`$data %>%
+  rownames_to_column("barcode") %>%
+  dplyr::select(barcode, celltype = x, hyperDMR = y)
+df_hypo <- p$`z:hypoDMR`$data %>%
+  rownames_to_column("barcode") %>%
+  mutate() %>%
+  dplyr::select(barcode, hypoDMR = y)
+
+df <- df_hyper %>%
+  left_join(df_hypo, by = "barcode") %>%
+  left_join(cellmeta, by = "barcode") %>% 
+  droplevels() %>%
+  left_join(cell_group, by = "celltype") %>%
+  dplyr::mutate(celltype = factor(celltype, levels = rownames(df_cellname)))
+
+saveRDS(df, file = here::here("output", DOCNAME, "dmr_chromvar_per_cell.rds"))
+
+dim(df)
+head(df)
+```
+
+Overall
+
+```{r dmr-chromvar-z-by-pcw-ALL, fig.width=5, fig.height=4, dev=c('png', 'pdf')}
+.plot_z_by_pcw <- function(dat = NULL, cell = NULL) {
+  if(!is.null(cell)) {
+    dat = dat %>% 
+      filter(celltype == cell) %>% 
+      droplevels()
+  } else {
+    cell = "All cells"
+  }
+  
+  df_median <- dat %>%
+    dplyr::group_by(PCW) %>%
+    dplyr::summarise(
+      m_hyper = median(hyperDMR),
+      m_hypo = median(hypoDMR), .groups = "drop"
+    )
+  
+  p1 <- dat %>%
+    ggplot(aes(x = PCW, y = hyperDMR)) +
+    geom_boxplot(outlier.alpha = .2) +
+    geom_smooth(
+      data = df_median,
+      aes(x = as.numeric(PCW), y = m_hyper),
+      method = "lm", se = FALSE, color = "#1f77b4", linewidth = 1.2
+    ) +
+      labs(x = NULL, y = "ChromVAR z (hyper-DMRs)")
+  
+  p2 <- dat %>%
+    ggplot(aes(x = PCW, y = hypoDMR)) +
+    geom_boxplot(outlier.alpha = .2) +
+    geom_smooth(
+      data = df_median,
+      aes(x = as.numeric(PCW), y = m_hypo),
+      method = "lm", se = FALSE, color = "#1f77b4", linewidth = 1.2
+    ) +
+      labs(y = "ChromVAR z (hypo-DMRs)")
+  
+  p1 / p2
+}
+
+.plot_z_by_pcw(dat = df)
+```
+
+### HSC
+
+```{r dmr-chromvar-z-by-pcw-HSC, fig.width=5, fig.height=4, dev=c('png', 'pdf')}
+.plot_z_by_pcw(dat = df, cell = "HSC")
+```
+
+### MK
+
+```{r dmr-chromvar-z-by-pcw-MK, fig.width=5, fig.height=4, dev=c('png', 'pdf')}
+.plot_z_by_pcw(dat = df, cell = "MK")
+```
+
+### NK
+
+```{r fig.width=5, fig.height=4}
+.plot_z_by_pcw(dat = df, cell = "NK")
+```
+
+### ProB-1
+
+```{r fig.width=5, fig.height=4}
+.plot_z_by_pcw(dat = df, cell = "ProB-1")
+```
+
+### IM-B
+
+```{r fig.width=5, fig.height=4}
+.plot_z_by_pcw(dat = df, cell = "IM-B")
+```
+
+### Kupffer
+
+```{r fig.width=5, fig.height=4}
+.plot_z_by_pcw(dat = df, cell = "Kupffer")
+```
+
+## cor(ChromVAR, PCW)?
+
+all cells
+
+```{r}
+dat <- df %>%
+  mutate(PCW = as.numeric(as.character(PCW))) %>%
+  group_by(PCW) %>%
+  dplyr::summarise(
+    m_hyper = median(hyperDMR),
+    m_hypo = median(hypoDMR)
+  )
+
+a <- broom::tidy(cor.test(dat$PCW, dat$m_hyper, method = "spearman"))
+a$celltype <- "ALL"
+a$type <- "hyper"
+b<- broom::tidy(cor.test(dat$PCW, dat$m_hypo, method = "spearman"))
+b$celltype <- "ALL"
+b$type <- "hypo"
+
+df_s_all <- rbind(a, b)
+df_s_all
+```
+
+by cell type, filter out cell types with less than 500 cells
+
+```{r}
+df_lst <- lapply(rownames(df_cellname[df_cellname$Freq >= 500,]), function(i) {
+  dat <- df %>%
+    filter(celltype == i) %>%
+    mutate(PCW = as.numeric(as.character(PCW))) %>%
+    group_by(PCW) %>%
+    dplyr::summarise(
+      m_hyper = median(hyperDMR),
+      m_hypo = median(hypoDMR)
+    )
+
+  a <- broom::tidy(cor.test(dat$PCW, dat$m_hyper, method = "spearman"))
+  a$celltype <- i
+  a$type <- "hyper"
+  b<- broom::tidy(cor.test(dat$PCW, dat$m_hypo, method = "spearman"))
+  b$celltype <- i
+  b$type <- "hypo"
+
+  return(rbind(a, b))
+})
+
+df_s <- do.call(rbind, df_lst)
+df_s <- rbind(df_s_all, df_s) %>% 
+  mutate(padj = p.adjust(p.value, method = "BH")) %>% 
+  dplyr::select(celltype, type, everything())
+
+df_s %>%
+  DT::datatable()
+```
+
+```{r fig.width=6.5, fig.height=6}
+df_s <- df_s %>%
+  mutate(
+    padj = case_when(
+      padj < 1e-5 ~ 1e-5,
+      TRUE ~ padj
+    )
+  )
+
+df_label <- df_s %>% 
+  filter(padj < 0.05)
+
+p <- df_s %>% 
+  ggplot(aes(x = estimate, y = -log10(padj), color = type)) +
+  geom_point() +
+  geom_text_repel(data = df_label, mapping = aes(x = estimate, y = -log10(padj), label = celltype),
+                  max.overlaps = 1000, min.segment.length = 0) +
+  geom_vline(xintercept = c(0), linetype = "dashed") +
+  geom_hline(yintercept = c(-log10(0.05)), linetype = "dashed") +
+  scale_color_manual(values = c("hyper" = "#ca3226", "hypo" = "#476fa9"))
+p
+```
+
+## ChromVAR ~ PCW
+
+all cells
+
+```{r}
+dat <- df %>%
+  mutate(PCW = as.numeric(as.character(PCW))) %>%
+  dplyr::group_by(PCW) %>%
+  dplyr::summarise(
+    m_hyper = median(hyperDMR),
+    m_hypo = median(hypoDMR)
+  )
+
+fit <- lm(m_hyper ~ PCW, data = dat)
+# summary(fit)
+df1 <- broom::tidy(fit)[2, ]
+df1$celltype <- "ALL"
+df1$type <- "hyper"
+
+fit <- lm(m_hypo ~ PCW, data = dat)
+# summary(fit)
+df2 <- broom::tidy(fit)[2, ]
+df2$celltype <- "ALL"
+df2$type <- "hypo"
+
+df_fit_all <- rbind(df1, df2)
+df_fit_all
+```
+
+by cell type, filter out cell types with less than 500 cells
+
+```{r}
+df_lst <- lapply(rownames(df_cellname[df_cellname$Freq >= 500,]), function(i) {
+  dat <- df %>%
+    filter(celltype == i) %>%
+    dplyr::mutate(PCW = as.numeric(as.character(PCW))) %>%
+    group_by(PCW) %>%
+    dplyr::summarise(
+      m_hyper = median(hyperDMR),
+      m_hypo = median(hypoDMR)
+    )
+
+  fit <- lm(m_hyper ~ PCW, data = dat)
+  # summary(fit)
+  df1 <- broom::tidy(fit)[2, ]
+  df1$celltype <- i
+  df1$type <- "hyper"
+
+  fit <- lm(m_hypo ~ PCW, data = dat)
+  # summary(fit)
+  df2 <- broom::tidy(fit)[2, ]
+  df2$celltype <- i
+  df2$type <- "hypo"
+
+  df_both <- rbind(df1, df2)
+  return(df_both)
+})
+
+df_fit <- do.call(rbind, df_lst)
+df_fit <- rbind(df_fit_all, df_fit) %>% 
+  dplyr::mutate(padj = p.adjust(p.value, method = "BH")) %>% 
+  dplyr::select(celltype, type, everything())
+
+df_fit %>%
+  DT::datatable()
+```
+
+```{r fig.width=6.5, fig.height=5}
+df_label <- df_fit %>% 
+  filter(padj < 0.05)
+
+p <- df_fit %>%
+  ggplot(aes(x = estimate, y = -log10(padj), color = type)) +
+  geom_point() +
+  geom_text_repel(data = df_label, mapping = aes(x = estimate, y = -log10(padj), label = celltype),
+                  max.overlaps = 100, min.segment.length = 0) +
+  geom_vline(xintercept = c(0), linetype = "dashed") +
+  geom_hline(yintercept = c(-log10(0.05)), linetype = "dashed") +
+  scale_color_manual(values = c("hyper" = "#ca3226", "hypo" = "#476fa9"))
+p
+```
+
+## Delta cell abundance vs. median z-score (lineage)
+
+by lineage
+
+use changes of fitted abundance between 18 and 8 pcw
+
+```{r}
+df_lineageByPCW <- df %>% 
+  group_by(PCW, cell2) %>% 
+  dplyr::summarise(n = n()) %>% 
+  dplyr::mutate(prop = n/sum(n))
+
+df_lst <- lapply(unique(df_lineageByPCW$cell2), function(i) {
+  dat <- df_lineageByPCW %>%
+    filter(cell2 == i) %>%
+    dplyr::mutate(PCW = as.numeric(as.character(PCW)))
+
+  fit <- lm(prop ~ PCW, data = dat)
+  # summary(fit)
+  df1 <- as.data.frame(broom::augment(fit))
+  # diff .fitted
+  diff <- df1[df1$PCW == 18, ".fitted"] - df1[df1$PCW == 8, ".fitted"]
+  df2 <- data.frame(cell2 = i, diff_fitted = diff)
+  return(df2)
+})
+
+df_fit <- do.call(rbind, df_lst)
+df_fit %>%
+  DT::datatable()
+```
+
+combine with median z-score, color by broad lineage
+
+```{r ChromVAR-z-lineage-abundance-change-h, fig.width=6, fig.height=3, dev=c('png', 'pdf')}
+df_z <- df %>% 
+  group_by(cell2) %>% 
+  dplyr::summarise(
+    m_hyper = median(hyperDMR),
+    m_hypo = median(hypoDMR)
+  )
+
+d4p <- df_fit %>% 
+  left_join(df_z, by = "cell2")
+
+p1 <- d4p %>% 
+  ggplot(aes(x = diff_fitted, y = m_hyper, color = cell2)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("HSC" = "#E41A1C", "Meg-Ery-Mast" = "#d5a45d",
+                               "Myeloid" = "#5e88ab",
+                               "Lymphoid" = "#799c6a",
+                               "Non-blood" = "#666666")) +
+  geom_text_repel(aes(label = cell2), max.overlaps = 1000, min.segment.length = 0) +
+  geom_vline(xintercept = c(0), linetype = "dashed") +
+  geom_hline(yintercept = c(0), linetype = "dashed") +
+  labs(x = "Fitted Δ proportion (18 – 8 pcw)",
+       y = "ChromVAR z (hyper-DMRs)",
+       color = "Lineage") +
+  theme(legend.position = "none")
+p2 <- d4p %>% 
+  ggplot(aes(x = diff_fitted, y = m_hypo, color = cell2)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("HSC" = "#E41A1C", "Meg-Ery-Mast" = "#d5a45d",
+                               "Myeloid" = "#5e88ab",
+                               "Lymphoid" = "#799c6a",
+                               "Non-blood" = "#666666")) +
+  geom_text_repel(aes(label = cell2), max.overlaps = 1000, min.segment.length = 0) +
+  geom_vline(xintercept = c(0), linetype = "dashed") +
+  geom_hline(yintercept = c(0), linetype = "dashed") +
+  labs(x = "Fitted Δ proportion (18 – 8 pcw)",
+       y = "ChromVAR z (hypo-DMRs)",
+       color = "Lineage") +
+  theme(legend.position = "none")
+
+p1 + p2 +
+  plot_layout(guides = "collect")
+```
+
+```{r ChromVAR-z-lineage-abundance-change-v, fig.width=3.5, fig.height=6.5, dev=c('png', 'pdf')}
+(p1 + theme(axis.title.x = element_blank()))/p2
+```
+
+## Session info

@@ -1,0 +1,447 @@
+---
+title: "DNAm.DSS"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "DNAm.DSS"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(ggpubr)
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+
+# heatmap
+library(ComplexHeatmap)
+library(pheatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(RColorBrewer)
+library(ggsci)
+
+# DNAm
+library(data.table)
+library(bsseq)
+library(DSS)
+
+# TF
+library(SummarizedExperiment)
+library(monaLisa)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(JASPAR2024)
+library(TFBSTools)
+
+# anno
+library(ChIPseeker)
+library(org.Hs.eg.db)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(clusterProfiler)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+source(here::here("utils/preprocess.R"))
+# source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+Filter'ed loci, autosome
+
+```{r}
+bs_5mC_filt <- qs2::qs_read(here::here("output", "DNAm", "bs_5mC_filt.autosomes.qs2"))
+bs_5mC_filt
+```
+
+DMLtest
+
+```{r}
+DMLtest <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC.DSS_DMLtest.qs2"))
+ix <- sort(DMLtest[,"pvals"], index.return=TRUE)$ix
+DMLtest <- DMLtest[ix,]
+
+head(DMLtest, 10)
+```
+
+dmrs (p.threshold = 0.05)
+
+```{r}
+dmrs <- qs2::qs_read(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.qs2")) |> 
+  arrange(-areaStat)
+dim(dmrs)
+head(dmrs, 10)
+```
+
+## Check DML
+
+pvals
+
+```{r}
+sum(DMLtest$pvals < 0.01)
+sum(DMLtest$pvals < 0.05)
+```
+
+fdrs
+
+```{r}
+sum(DMLtest$fdrs < 0.01)
+sum(DMLtest$fdrs < 0.05)
+```
+
+Number
+
+```{r}
+DMLtest |> 
+  filter(fdrs < 0.05) |> 
+  mutate(x = ifelse(stat > 0, "Up", "Dn")) |> 
+  pull(x) |> 
+  table()
+```
+
+p distribution
+
+```{r fig.width=6, fig.height=4}
+DMLtest |> 
+  ggplot(aes(x = pvals)) +
+  geom_histogram(binwidth = 0.01, fill = "grey", color = "white") +
+  scale_y_continuous(expand = c(0, 0))
+```
+
+Some top sites
+
+```{r, fig.width=7, fig.height=6}
+df_dml_up <- as.data.frame(DMLtest) |> 
+  filter(fdrs < 0.05) |> 
+  arrange(-stat) |> 
+  head(10)
+df_dml_dn <- as.data.frame(DMLtest) |> 
+  filter(fdrs < 0.05) |> 
+  arrange(-stat) |> 
+  tail(10)
+
+df_dml <- rbind(df_dml_up, df_dml_dn) |> 
+  mutate(start = pos - 1,
+         name = paste(chr, start, pos, sep = "-")) |> 
+  dplyr::select(chr, start, end = pos, name)
+#df_dml
+
+meth_region <- getMeth(bs_5mC_filt, regions = df_dml, type = "smooth", what = "perRegion")
+
+groups <- pData(bs_5mC_filt)$PCW  # factor or character vector
+region_means <- sapply(split(seq_along(groups), groups), function(idx) {
+  rowMeans(meth_region[, idx, drop = FALSE], na.rm = TRUE)
+})
+rownames(region_means) <- df_dml$name
+#head(region_means)
+
+pheatmap::pheatmap(region_means, cluster_cols = F, cluster_rows = F)
+```
+
+raw
+
+```{r fig.width=7, fig.height=6}
+meth_region <- getMeth(bs_5mC_filt, regions = df_dml, type = "raw", what = "perRegion")
+
+groups <- pData(bs_5mC_filt)$PCW  # factor or character vector
+region_means <- sapply(split(seq_along(groups), groups), function(idx) {
+  rowMeans(meth_region[, idx, drop = FALSE], na.rm = TRUE)
+})
+rownames(region_means) <- df_dml$name
+#head(region_means)
+
+pheatmap::pheatmap(region_means, cluster_cols = F, cluster_rows = F)
+```
+
+## Check DMR
+
+number
+
+```{r}
+table(dmrs$areaStat > 0)
+```
+
+length
+
+```{r fig.width=6, fig.height=4}
+dmrs |> 
+  ggplot(aes(x = log2(length))) +
+  geom_density()
+```
+
+Some top regions
+
+```{r fig.width=7, fig.height=6}
+df_dmr_up <- dmrs |> 
+  head(10)
+df_dmr_dn <- dmrs |> 
+  tail(10)
+df_dmr <- rbind(df_dmr_up, df_dmr_dn) |> 
+  mutate(name = paste(chr, start, end, sep = "-"))
+
+meth_region <- getMeth(bs_5mC_filt, regions = df_dmr, type = "smooth", what = "perRegion")
+groups <- pData(bs_5mC_filt)$PCW  # factor or character vector
+region_means <- sapply(split(seq_along(groups), groups), function(idx) {
+  rowMeans(meth_region[, idx, drop = FALSE], na.rm = TRUE)
+})
+rownames(region_means) <- df_dmr$name
+#head(region_means)
+
+pheatmap::pheatmap(region_means, cluster_cols = F, cluster_rows = F)
+```
+
+raw
+
+```{r fig.width=7, fig.height=6}
+meth_region <- getMeth(bs_5mC_filt, regions = df_dmr, type = "raw", what = "perRegion")
+groups <- pData(bs_5mC_filt)$PCW  # factor or character vector
+region_means <- sapply(split(seq_along(groups), groups), function(idx) {
+  rowMeans(meth_region[, idx, drop = FALSE], na.rm = TRUE)
+})
+rownames(region_means) <- df_dmr$name
+#head(region_means)
+
+pheatmap::pheatmap(region_means, cluster_cols = F, cluster_rows = F)
+```
+
+## DMR anno {.tabset}
+
+```{r}
+peak_files = list(
+  methy_up = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_Up.bed"),
+  methy_dn = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_Dn.bed")
+)
+
+peakList <- lapply(peak_files, readPeakFile)
+lengths(peakList)
+```
+
+```{r eval=FALSE}
+txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+peakAnnoList <- lapply(peakList, annotatePeak, level = "gene", TxDb=txdb, tssRegion=c(-1000, 1000),
+                       annoDb="org.Hs.eg.db", flankDistance = 1000, addFlankGeneInfo=T,
+                       verbose=FALSE)
+saveRDS(peakAnnoList, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_peakAnnoList.rds"))
+```
+
+```{r}
+peakAnnoList <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_peakAnnoList.rds"))
+```
+
+```{r, fig.height=3, fig.width=8}
+plotAnnoBar(peakAnnoList) +
+  theme_cowplot()
+```
+
+ORA
+
+```{r eval=FALSE}
+cmpList <- list(
+  methy_up = peakAnnoList$methy_up@anno |> as.data.frame() |>
+    filter(!is.na(geneId), abs(distanceToTSS) < 2000) |> 
+    pull(geneId) |> unique(),
+  methy_dn = peakAnnoList$methy_dn@anno |> as.data.frame() |>
+    filter(!is.na(geneId), abs(distanceToTSS) < 2000) |> 
+    pull(geneId) |> unique()
+)
+lengths(cmpList)
+#methy_up methy_dn 
+#    1684      467
+     
+# ORA, KEGG
+ck = compareCluster(cmpList, fun = "enrichKEGG", organism = "hsa", pvalueCutoff = 0.05)
+ck <- setReadable(ck, 'org.Hs.eg.db', keyType = "ENTREZID")
+saveRDS(ck, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_KEGG.rds"))
+as.data.frame(ck) |> 
+  write_tsv(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_KEGG.tsv"))
+
+# ORA, GO-BP
+cg.BP = compareCluster(cmpList, fun = "enrichGO", OrgDb = org.Hs.eg.db, ont = "BP",
+                       pAdjustMethod = "BH", pvalueCutoff = 0.05, readable = T)
+saveRDS(cg.BP, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_GOBP.rds"))
+as.data.frame(cg.BP) |> 
+  write_tsv(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_GOBP.tsv"))
+```
+
+### KEGG
+
+```{r, fig.width=7, fig.height=8}
+ck <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_KEGG.rds"))
+
+dotplot(ck, showCategory = 10, title = "KEGG")
+```
+
+### GO-BP
+
+```{r, fig.width=8, fig.height=7}
+cg.BP <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005.ORA_GOBP.rds"))
+s_cg.BP <- simplify(cg.BP)
+
+dotplot(cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+dotplot(s_cg.BP, showCategory = 10, title = "GO:BP") +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 60))
+```
+
+## Volcano
+
+```{r fig.width=6, fig.height=5}
+d4p <- rbind(as.data.frame(peakAnnoList$methy_up@anno), as.data.frame(peakAnnoList$methy_dn@anno))
+
+tmp1 <- d4p |> 
+  filter(abs(distanceToTSS) < 5000) |> 
+  arrange(-V6, -V5) |> 
+  slice_head(n = 10)
+tmp2 <- d4p |> 
+  filter(abs(distanceToTSS) < 5000) |> 
+  arrange(V6, -V5) |> 
+  slice_head(n = 10)
+d4l <- rbind(tmp1, tmp2)
+
+d4p |> 
+  ggplot(aes(x = V6, y = V5)) +
+  geom_point_rast(color = "gray") +
+  geom_text_repel(data = d4l, aes(x = V6, y = V5, label = SYMBOL),
+                  min.segment.length = 0,
+                  inherit.aes = FALSE) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "areaStat", y = "nCG")
+```
+
+## DMR TF enrichment (2 bins)
+
+```{r eval=FALSE}
+pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
+
+lmrsel2 <- c(peakList$methy_up, peakList$methy_dn)
+lmrsel2 <- trim(resize(lmrsel2, width = median(width(lmrsel2)), fix = "center"))
+summary(width(lmrsel2))
+
+# extract sequences from the genome
+lmrseqs2 <- getSeq(BSgenome.Hsapiens.UCSC.hg38, lmrsel2)
+
+# define binning vector
+bins2 <- rep(c("up", "dn"), c(length(peakList$methy_up), length(peakList$methy_dn)))
+bins2 <- factor(bins2)
+table(bins2)
+
+se2 <- calcBinnedMotifEnrR(seqs = lmrseqs2, bins = bins2,
+                           pwmL = pwms)
+se2
+
+saveRDS(se2, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa_2bins.rds"))
+```
+
+```{r}
+se2 <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa_2bins.rds"))
+se2
+```
+
+```{r fig.width=8, fig.height=20}
+sel2 <- apply(assay(se2, "negLog10Padj"), 1, 
+             function(x) max(abs(x), 0, na.rm = TRUE)) > 4.0
+sum(sel2)
+
+plotMotifHeatmaps(x = se2[sel2,], which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 1.8, cluster = TRUE, maxEnr = 2, maxSig = 10,
+                  show_seqlogo = TRUE)
+```
+
+## DMR TF enrichment
+
+```{r}
+lmrsel <- c(peakList$methy_up, peakList$methy_dn)
+lmrsel <- trim(resize(lmrsel, width = median(width(lmrsel)), fix = "center"))
+summary(width(lmrsel))
+
+# define binning vector
+bins <- bin(x = lmrsel$V7, binmode = "equalN", nElement = 2000, minAbsX = NULL)
+table(bins)
+```
+
+beta distribution
+
+```{r fig.width=10, fig.height=8}
+plotBinDensity(lmrsel$V7, bins, legend = "topright")
+```
+
+```{r eval=FALSE}
+# extract sequences from the genome
+lmrseqs <- getSeq(BSgenome.Hsapiens.UCSC.hg38, lmrsel)
+
+pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
+se <- calcBinnedMotifEnrR(seqs = lmrseqs, bins = bins,
+                           pwmL = pwms)
+se
+
+saveRDS(se, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa.rds"))
+```
+
+```{r}
+se <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa.rds"))
+se
+```
+
+big imbalance between up- and dn- DMRs
+
+```{r fig.width=8, fig.height=15}
+sel <- apply(assay(se, "negLog10Padj"), 1, 
+             function(x) max(abs(x), 0, na.rm = TRUE)) > 4.0
+sum(sel)
+
+plotMotifHeatmaps(x = se[sel,], which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 1.8, cluster = TRUE,
+                  #maxEnr = 2, maxSig = 10,
+                  show_seqlogo = TRUE)
+```
+
+## Session info
