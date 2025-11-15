@@ -1,7 +1,7 @@
 
 # Multiomics analysis of fetal liver hematopoiesis
 
-Here are scripts accompanying the manuscript: The epigenetic and transcriptomic blueprint of human foetal liver haematopoiesis across development
+Here are scripts accompanying the manuscript: Temporal and regulatory landscape of human foetal liver haematopoiesis mapped by single-nucleus multiomics
 
 
 ## Contents
