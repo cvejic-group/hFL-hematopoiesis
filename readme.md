@@ -31,6 +31,7 @@ Code and scripts used for the custom analyses in the manuscript. These are share
 
 * cell_cycle: cell-cycle related analysis
   * 01.qHSC
+  * 02.Dynamic_CC_modeling
 
 * peak_gene_links: identification of peak-gene links
 
