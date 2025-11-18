@@ -207,14 +207,15 @@ DotPlot(srat, features = c("ITGA6", "THY1", "CDK6", "CCND1", "CCND3", "CDK4"), g
 ## Composition
 
 ```{r fig.width=3, fig.height=5}
-d4p <- srat@meta.data |> filter(PCW != 'Mixed') |> 
-  group_by(PCW, G0_label) |> 
+d4p <- srat@meta.data |> filter(PCW_new != 'Mixed') |> 
+  droplevels() |> 
+  group_by(PCW_new, G0_label) |> 
   summarize(count = n()) |>
   mutate(prop = count / sum(count) * 100)
 
 p <- d4p |> 
-  mutate(PCW = factor(PCW, levels = as.character(18:5))) |> 
-  ggplot(aes(x = PCW, y = prop, fill = G0_label)) +
+  mutate(PCW_new = factor(PCW_new, levels = as.character(18:5))) |> 
+  ggplot(aes(x = PCW_new, y = prop, fill = G0_label)) +
   geom_col() +
   scale_y_continuous(expand = c(0, 0)) +
   scale_fill_manual(values = c('G0'='#984EA3','G1'='#1f77b4','S'='#ff7f0e','G2M'='#2ca02c')) +
@@ -273,7 +274,7 @@ quantile(mat[,1], c(0.01, 0.05, 0.1, 0.5, 0.8, 0.9, 0.95, 0.99), na.rm=TRUE)
 col_fun = circlize::colorRamp2(c(-0.2, 0, 0.32), c("blue", "white", "red"))
 
 # label location
-marker_2_lab <- c(
+marker_2_lab_l <- c(
     # up
     "MECOM", "HLF", "PRDM16", "MLLT3",
     "CLEC9A", "EMCN", "LMNA", "MYCT1",
@@ -282,14 +283,14 @@ marker_2_lab <- c(
     # dn
     "CDK6", "MYC", "MYCN", "EZH2", "ITGA9"
 )
-marker_2_lab = sapply(marker_2_lab, function(x){which(rownames(mat) == x)}, simplify = T)
-ha = rowAnnotation(foo = anno_mark(at = marker_2_lab,
-                                   labels = names(marker_2_lab),
+marker_2_lab_l = sapply(marker_2_lab_l, function(x){which(rownames(mat) == x)}, simplify = T)
+ha_l = rowAnnotation(foo = anno_mark(at = marker_2_lab_l,
+                                   labels = names(marker_2_lab_l),
                                    labels_gp = gpar(fontsize = 6)))
 
 ht = Heatmap(mat, name = "beta",
         col = col_fun,
-        right_annotation = ha,
+        right_annotation = ha_l,
         cluster_columns = F,
         cluster_rows = F,
         show_row_names = FALSE,
@@ -342,7 +343,7 @@ gene_df$gene_color <- group_colors[as.character(gene_df$gene_group)]
 gth = sapply(gene_df$gene, function(x){which(rownames(mat) == x)}, simplify = T)
 
 # rowname anno
-ha = rowAnnotation(foo = anno_mark(at = gth, labels = names(gth),
+ha_r = rowAnnotation(foo = anno_mark(at = gth, labels = names(gth),
                                    labels_gp = gpar(fontsize = 10,
                                                     col = gene_df$gene_color,
                                                     fontface = "bold"),
@@ -362,7 +363,7 @@ pd = packLegend(gene_group_legend, max_width = unit(5.5, "cm"))
 
 ht = Heatmap(mat, name = "beta",
         col = col_fun,
-        right_annotation = ha,
+        right_annotation = ha_r,
         cluster_columns = F,
         cluster_rows = F,
         show_row_names = FALSE,
@@ -384,6 +385,45 @@ p.ht
 ggsave2(
   filename = here::here("output", DOCNAME, "HSC.QvsC.DEG_heatmap_show_ATPase.pdf"),
   width = 3.5, height = 6
+)
+```
+
+### heatmap of known and ATPase
+
+```{r fig.width=4, fig.height=6}
+ha_l = rowAnnotation(foo = anno_mark(at = marker_2_lab_l,
+                                   labels = names(marker_2_lab_l),
+                                   labels_gp = gpar(fontsize = 10),
+                                   which = "row",
+                                   side = "left")
+                     )
+
+
+ht = Heatmap(mat, name = "beta",
+        col = col_fun,
+        left_annotation = ha_l,
+        right_annotation = ha_r,
+        cluster_columns = F,
+        cluster_rows = F,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        #column_names_gp = gpar(fontsize = 6),
+        #column_names_rot = 60,
+        heatmap_legend_param = list(direction = "horizontal",
+                                    labels_gp = gpar(fontsize = 6),
+                                    title_gp = gpar(fontsize = 6),
+                                    title_position = "topcenter",
+                                    grid_height = unit(1.5, "mm"),
+                                    grid_width = unit(1.5, "mm")),
+        width = unit(0.5, "cm")
+        )
+#draw(ht, heatmap_legend_side = "bottom")
+p.ht2 = plot_grid(grid.grabExpr(draw(ht, heatmap_legend_side = "top", annotation_legend_list = list(pd))))
+p.ht2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.QvsC.DEG_heatmap_show_known_&_ATPase.pdf"),
+  width = 4, height = 6
 )
 ```
 
