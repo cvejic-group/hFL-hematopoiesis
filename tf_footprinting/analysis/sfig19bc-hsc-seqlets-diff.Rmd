@@ -1,0 +1,1020 @@
+---
+title: "Compare HSC Seqlets over Development"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+Here we compare seqlets called in different PCWs, but derived from the same initial peak set ("unified").
+
+In particular, we are interested to know if the models trained on week-specific data have differential seqlet inference. Thus, we will look at number of seqlets called per week and test if any have bias in developmental time.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(writexl)
+library(ggrepel)
+library(scales)
+library(GenomicFeatures)
+library(GenomicRanges)
+library(ChIPseeker)
+library(plyranges)
+library(rtracklayer)
+library(pheatmap)
+library(BiocParallel)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20250709)
+BiocParallel::register(MulticoreParam(8L))
+
+OUTPUT_XLSX_ENRICHMENT="analysis/tables/tf-footprint-enrichment-da-peaks.xlsx"
+
+OUTPUT_FIG_DA_UP_ENRICHED="figures/suppl-fig-tf-footprint-enrichment-da-up.pdf"
+OUTPUT_FIG_DA_DOWN_ENRICHED="figures/suppl-fig-tf-footprint-enrichment-da-down.pdf"
+
+BED_PEAKS="/work/aaa/projects/chrombpnet-devmult/pipeline/resources/peaks/unified/HSC.unified.bed"
+
+BEDPE_SEQLETS=c(
+  "HSC_PCW5"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW5/mean/modisco/HSC_PCW5_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW6"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW6/mean/modisco/HSC_PCW6_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW7"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW7/mean/modisco/HSC_PCW7_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW8"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW8/mean/modisco/HSC_PCW8_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW9"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW9/mean/modisco/HSC_PCW9_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW10"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW10/mean/modisco/HSC_PCW10_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW11"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW11/mean/modisco/HSC_PCW11_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW12"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW12/mean/modisco/HSC_PCW12_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW13"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW13/mean/modisco/HSC_PCW13_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW14"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW14/mean/modisco/HSC_PCW14_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW15"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW15/mean/modisco/HSC_PCW15_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW16"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW16/mean/modisco/HSC_PCW16_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW17"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW17/mean/modisco/HSC_PCW17_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW18"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW18/mean/modisco/HSC_PCW18_mean.counts_scores.top_tf.bedpe.gz"
+)
+
+TXDB_FILE="/work/DevM_analysis/data/refdata-cellranger-arc-GRCh38-2020-A-2.0.0_genes/cellranger-2020-A-2.0.0.txdb"
+
+BED_DA_TESTED="/work/DevM_analysis/data/HSC_dev_diff_peaks/HSC_dev_da_lmm.peak_tested.bed"
+BED_DA_DOWN="/work/DevM_analysis/data/HSC_dev_diff_peaks/HSC_dev_da_lmm.peak_dn.bed"
+BED_DA_UP="/work/DevM_analysis/data/HSC_dev_diff_peaks/HSC_dev_da_lmm.peak_up.bed"
+
+COLS_PCW=c(
+  "HSC_PCW5"="#FFBF00",
+  "HSC_PCW6"="#ff986d",
+  "HSC_PCW7"="#ff8782",
+  "HSC_PCW8"="#ff7b9b",
+  "HSC_PCW9"="#f176b4",
+  "HSC_PCW10"="#d97fce",
+  "HSC_PCW11"="#b989e2",
+  "HSC_PCW12"="#9094ed",
+  "HSC_PCW13"="#60a4f2",
+  "HSC_PCW14"="#32b1eb",
+  "HSC_PCW15"="#29badb",
+  "HSC_PCW16"="#4bc0c8",
+  "HSC_PCW17"="#8dd7db",
+  "HSC_PCW18"="#c0dedf")
+
+theme_set(theme_bw())
+```
+
+## Functions
+
+```{r methods}
+read_bedpe_tff <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf", "score", "strand", "tff_id"),
+           col_types="cii___cdc__c") %>%
+    mutate(pattern_type=str_extract(tff_id, "^[^_]+"),
+           pattern_idx=as.integer(str_extract(tff_id, "(neg|pos)_patterns\\.pattern_([0-9]+)", group=2))) %>%
+    as_granges() %>%
+    unique()
+}
+
+read_bedpe_target <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf"),
+           col_types="___ciic_____") %>%
+    as_granges() %>%
+    filter(!duplicated(as_tibble(.)))
+}
+
+read_bed_unstranded <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "name", "score"),
+           col_types="ciicd") %>%
+    mutate(strand="*") %>%
+    as_granges()
+}
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+gr_atac_peaks <- read_narrowpeaks(BED_PEAKS)
+gr_da_tested <- read_bed_unstranded(BED_DA_TESTED)
+gr_da_down <- read_bed_unstranded(BED_DA_DOWN)
+gr_da_up <- read_bed_unstranded(BED_DA_UP)
+
+
+df_seqlet_peaks <- enframe(BEDPE_SEQLETS, name="sample_id", value="file") %>%
+  mutate(gr_seqlet_peaks=map(file, read_bedpe_target),
+         gr_seqlets=map(file, read_bedpe_tff)) %>%
+  select(sample_id, gr_seqlet_peaks, gr_seqlets)
+
+txdb <- loadDb(TXDB_FILE)
+```
+
+## Preprocessing
+```{r prepare_data}
+gr_all <- Reduce(intersect, df_seqlet_peaks$gr_seqlet_peaks)
+
+gr_any <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>% reduce
+
+gr_seqlet_peaks_tfs <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>%
+  filter(!duplicated(as_tibble(.)))
+
+df_seqlet_peaks %<>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_unified=length(gr_atac_peaks),
+         n_seqlet_peaks=map_int(gr_seqlet_peaks, length),
+         n_seqlets=map_int(gr_seqlets, length)) %>%
+  mutate(frac_seqlet_peak=n_seqlet_peaks/n_unified)
+
+mat_peak_sample <- lapply(df_seqlet_peaks$gr_seqlet_peaks, function (gr) {
+  countOverlaps(gr_atac_peaks, gr, minoverlap=500L)
+}) %>% do.call(what=cbind) %>%
+  `rownames<-`(gr_atac_peaks$name) %>%
+  `colnames<-`(df_seqlet_peaks$sample_id)
+
+mat_nuniqseqlets <- outer(df_seqlet_peaks$gr_seqlets, 
+                          df_seqlet_peaks$gr_seqlets,
+                          Vectorize(function(x,y) {
+                            length(filter_by_non_overlaps(x, y, minoverlap=25L)) })
+                          ) %>%
+  `colnames<-`(df_seqlet_peaks$sample_id) %>%
+  `rownames<-`(df_seqlet_peaks$sample_id)
+```
+
+### Annotations
+```{r annot_raw_peaks}
+annots_atac_peaks <- annotatePeak(gr_atac_peaks, level="gene", TxDb=txdb, tssRegion=c(-1000,1000), annoDb="org.Hs.eg.db", flankDistance=1000, addFlankGeneInfo=TRUE, verbose=FALSE)
+```
+
+```{r annots_peak_freqs}
+df_annot_peaks <- as_tibble(annots_atac_peaks) %>%
+  mutate(n_samples_detecting=rowSums(mat_peak_sample)[name]) %>%
+  mutate(annotation_simple=case_when(
+    str_detect(annotation, "exon") ~ "Exon",
+    str_detect(annotation, "intron 1 of") ~ "Intron (first)",
+    str_detect(annotation, "intron") ~ "Intron (other)",
+    .default=annotation)) %>%
+  mutate(annot_fct=fct(annotation_simple, levels=c("Promoter", "5' UTR", "Exon", 
+                                                   "Intron (first)", "Intron (other)", "3' UTR",
+                                                   "Downstream (<=300bp)", "Distal Intergenic")),
+         n_samples_fct=fct(case_when(
+           n_samples_detecting == 0 ~ "None",
+           n_samples_detecting == max(n_samples_detecting) ~ "All",
+           n_samples_detecting <= 4 ~ "Few [1-4]",
+           n_samples_detecting > 4 ~ "Many [5+]"),
+           levels=c("None", "Few [1-4]", "Many [5+]", "All")))
+
+df_annot_peaks %>%
+  count(n_samples_fct, annot_fct) %>%
+  pivot_wider(names_from="annot_fct", values_from="n")
+
+df_annot_peaks %>%
+  count(n_samples_fct, annot_fct) %>%
+  pivot_wider(names_from="annot_fct", values_from="n") %>%
+  rowwise() %>%
+  mutate(across(where(is.numeric), ~ .x / sum(c_across(where(is.numeric))))) %>%
+  ungroup()
+```
+
+
+# Analysis
+
+
+```{r}
+idx_tested <- filter_by_overlaps(gr_atac_peaks, gr_da_tested)$name
+idx_down <- filter_by_overlaps(gr_atac_peaks, gr_da_down)$name
+idx_up <- filter_by_overlaps(gr_atac_peaks, gr_da_up)$name
+
+df_annot_peaks %<>%
+  mutate(is_da_tested=name %in% idx_tested,
+         is_da_down=name %in% idx_down,
+         is_da_up=name %in% idx_up)
+```
+
+
+```{r tbl_nums}
+df_annot_peaks %>%
+  count(is_da_tested)
+df_annot_peaks %>%
+  count(is_da_tested, n_samples_detecting > 0)
+```
+
+```{r plt_da_tests, fig.width=6, fig.height=4}
+df_annot_peaks  %>%
+  count(n_samples_fct, is_da_tested) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_tested)) +
+  geom_bar(stat='identity', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Peaks", fill="DA was tested?")
+
+df_annot_peaks  %>%
+  count(n_samples_fct, is_da_tested) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_tested)) +
+  geom_bar(stat='identity', position='fill', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Fraction of Peaks", fill="DA was tested?")
+```
+
+
+```{r plt_da_down, fig.width=6, fig.height=4}
+df_annot_peaks  %>%
+  filter(is_da_tested) %>%
+  count(n_samples_fct, is_da_down) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_down)) +
+  geom_bar(stat='identity', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Peaks", fill="DA Down")
+
+df_annot_peaks  %>%
+  filter(is_da_tested) %>%
+  count(n_samples_fct, is_da_down) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_down)) +
+  geom_bar(stat='identity', position='fill', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Fraction of Peaks", fill="DA Down")
+```
+
+
+
+```{r plt_da_up, fig.width=6, fig.height=4}
+df_annot_peaks  %>%
+  filter(is_da_tested) %>%
+  count(n_samples_fct, is_da_up) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_up)) +
+  geom_bar(stat='identity', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Peaks", fill="DA Up")
+
+df_annot_peaks  %>%
+  filter(is_da_tested) %>%
+  count(n_samples_fct, is_da_up) %>%
+  ggplot(aes(x=n_samples_fct, y=n, fill=is_da_up)) +
+  geom_bar(stat='identity', position='fill', color='black') +
+  scale_fill_manual(values=c('grey', 'steelblue1')) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  labs(x="PCWs Detecting Seqlet in Peak", 
+       y="Fraction of Peaks", fill="DA Up")
+```
+
+
+```{r annots_tested, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  ggplot(aes(x=is_da_tested, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,2.5e4,5e4,7.5e4,1e5),
+                     labels=c("0", "25K", "50K", "75K", "100K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Peak Tested", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  ggplot(aes(x=is_da_tested, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Peak Tested", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+
+```{r annots_da_down, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  ggplot(aes(x=is_da_down, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,2.5e4,5e4,7.5e4,1e5),
+                     labels=c("0", "25K", "50K", "75K", "100K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="DA Down", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  ggplot(aes(x=is_da_down, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="DA Down", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+
+```{r annots_vs_da_status, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  ggplot(aes(x=test_result, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="DA status", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  filter(test_result != "NS") %>%
+  ggplot(aes(x=test_result, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="DA status", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  ggplot(aes(x=test_result, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="DA status", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+```{r plt_detecting_vs_test, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  ggplot(aes(x=is_da_tested, fill=fct_rev(n_samples_fct))) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(direction=-1, option="G") +
+  labs(x="Tested for DA", y="Peaks", fill="PCWs\ndetecting\nseqlets in\nthe peak")
+
+df_annot_peaks %>%
+  ggplot(aes(x=is_da_tested, fill=fct_rev(n_samples_fct))) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(direction=-1, option="G") +
+  labs(x="Tested for DA", y="Fraction of peaks", fill="PCWs\ndetecting\nseqlets in\nthe peak")
+```
+
+
+```{r plt_detecting_vs_test_outcome, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  ggplot(aes(x=test_result, fill=fct_rev(n_samples_fct))) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(direction=-1, option="G") +
+  labs(x="DA status", y="Peaks", fill="PCWs\ndetecting\nseqlets in\nthe peak")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  filter(test_result != "NS") %>%
+  ggplot(aes(x=test_result, fill=fct_rev(n_samples_fct))) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(direction=-1, option="G") +
+  labs(x="DA status", y="Peaks", fill="PCWs\ndetecting\nseqlets in\nthe peak")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up"))) %>%
+  ggplot(aes(x=test_result, fill=fct_rev(n_samples_fct))) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(direction=-1, option="G") +
+  labs(x="DA status", y="Fraction of peaks", fill="PCWs\ndetecting\nseqlets in\nthe peak")
+```
+
+
+## Closing promoters?
+Are the downregulated peaks without a TFF enriched for promoters?
+
+To test this we can contrast the fraction of promoters in down-none vs down-any.
+
+```{r plt_dn_regions_seqlet, fig.width=5, fig.height=3}
+df_annot_peaks %>%
+  filter(is_da_down) %>%
+  ggplot(aes(x=n_samples_fct, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="PCWs detecting seqlets in peak", y="Peaks", fill="Genomic\nRegion")
+  
+df_annot_peaks %>%
+  filter(is_da_down) %>%
+  ggplot(aes(x=n_samples_fct, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="PCWs detecting seqlets in peak", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+
+```{r tbls_no_seqlets}
+df_annot_peaks %>% 
+  filter(is_da_tested, is_da_down, n_samples_detecting == 0) %>%
+  count(annot_fct, name="n_peaks", sort=TRUE) %>%
+  mutate(frac_peaks=n_peaks/sum(n_peaks))
+
+df_annot_peaks %>% 
+  filter(is_da_tested, is_da_up, n_samples_detecting == 0) %>%
+  count(annot_fct, name="n_peaks", sort=TRUE) %>%
+  mutate(frac_peaks=n_peaks/sum(n_peaks))
+
+df_annot_peaks %>% 
+  filter(is_da_tested, !is_da_up, !is_da_down, n_samples_detecting == 0) %>%
+  count(annot_fct, name="n_peaks", sort=TRUE) %>%
+  mutate(frac_peaks=n_peaks/sum(n_peaks))
+```
+
+Peaks without seqlets are predominantly in promoter regions.
+
+```{r}
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0) %>%
+  ggplot(aes(x=has_seqlet, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0) %>%
+  filter(test_result != "NS") %>%
+  ggplot(aes(x=has_seqlet, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0) %>%
+  ggplot(aes(x=has_seqlet, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Genomic\nRegion")
+
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_promoter=annotation_simple=="Promoter") %>%
+  ggplot(aes(x=has_seqlet, fill=in_promoter)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_manual(values=c("grey80", "#3542c1")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Promoter")
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_promoter=annotation_simple=="Promoter") %>%
+  filter(test_result != "NS") %>%
+  ggplot(aes(x=has_seqlet, fill=in_promoter)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_manual(values=c("grey80", "#3542c1")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Promoter")
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_promoter=annotation_simple=="Promoter") %>%
+  ggplot(aes(x=has_seqlet, fill=in_promoter)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_manual(values=c("grey80", "#3542c1")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Promoter")
+
+
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_intergenic=annotation_simple=="Distal Intergenic") %>%
+  ggplot(aes(x=has_seqlet, fill=in_intergenic)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_manual(values=c("grey80", "#b5120d")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Intergenic")
+
+df_annot_peaks %>% 
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_intergenic=annotation_simple=="Distal Intergenic") %>%
+  filter(test_result != "NS") %>%
+  ggplot(aes(x=has_seqlet, fill=in_intergenic)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  scale_fill_manual(values=c("grey80", "#b5120d")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Intergenic")
+
+df_annot_peaks %>%
+  filter(is_da_tested) %>%
+  mutate(test_result=case_when(is_da_down ~ "Down", is_da_up ~ "Up", .default="NS") %>%
+           fct(levels=c("Down", "NS", "Up")),
+         has_seqlet=n_samples_detecting > 0,
+         in_intergenic=annotation_simple=="Distal Intergenic") %>%
+  ggplot(aes(x=has_seqlet, fill=in_intergenic)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_manual(values=c("grey80", "#b5120d")) +
+  facet_grid(cols=vars(test_result)) +
+  labs(x="Seqlet Detected", y="Peaks", fill="Intergenic")
+```
+
+
+
+## What seqlets are in the significantly differential peaks?
+
+```{r compute_enriched_tfs_in_sig_peaks}
+compute_tf_enrichment <- function (gr_seqlets, gr_sig, alternative="greater") {
+  df_random <- gr_seqlets %>% as_tibble %>% 
+    count(top_tf, name="n_detected") %>%
+    mutate(rate_detected=n_detected/sum(n_detected))
+  
+  df_sample <- filter_by_overlaps(gr_seqlets, gr_sig) %>%
+    as_tibble() %>%
+    count(top_tf, name="n_sig") %>%
+    mutate(frac_sig=n_sig/sum(n_sig),
+           n_total=sum(n_sig))
+  
+  left_join(df_sample, df_random, by="top_tf") %>%
+    rowwise() %>%
+    mutate(
+      res=list(binom.test(n_sig, n_total, p=rate_detected, alternative=alternative)),
+      p_value=res$p.value,
+      statistic=res$statistic
+    ) %>%
+    select(-res) %>%
+    ungroup() %>%
+    mutate(q_value=p.adjust(p_value, method="BH"),
+           l2rc=log2(frac_sig/rate_detected)) %>%
+    arrange(q_value)
+}
+
+df_tfs_down <- filter_by_overlaps(gr_seqlet_peaks_tfs, gr_da_tested) %>%
+  compute_tf_enrichment(gr_da_down)
+
+df_tfs_up <- filter_by_overlaps(gr_seqlet_peaks_tfs, gr_da_tested) %>%
+  compute_tf_enrichment(gr_da_up)
+```
+
+### Overall Counts
+```{r motif_peak_counts}
+df_da_motif_intersect <- tribble(
+  ~set, ~n_peaks, ~n_peaks_detecting, ~n_motifs,
+  "da_tested", length(gr_da_tested), 
+  length(filter_by_overlaps(gr_da_tested, gr_seqlet_peaks_tfs)),
+  length(filter_by_overlaps(gr_seqlet_peaks_tfs, gr_da_tested)),
+  
+  "da_down", length(gr_da_down), 
+  length(filter_by_overlaps(gr_da_down, gr_seqlet_peaks_tfs)),
+  length(filter_by_overlaps(gr_seqlet_peaks_tfs, gr_da_down)),
+  
+  "da_up", length(gr_da_up), 
+  length(filter_by_overlaps(gr_da_up, gr_seqlet_peaks_tfs)),
+  length(filter_by_overlaps(gr_seqlet_peaks_tfs, gr_da_up)),
+  
+  "da_sig", length(c(gr_da_down, gr_da_up)),
+  length(filter_by_overlaps(c(gr_da_down, gr_da_up), gr_seqlet_peaks_tfs)),
+  length(filter_by_overlaps(gr_seqlet_peaks_tfs, c(gr_da_down, gr_da_up))),
+  
+  "da_nonsig", length(gr_da_tested)-length(c(gr_da_down, gr_da_up)),
+  length(filter_by_overlaps(filter_by_non_overlaps(gr_da_tested, c(gr_da_down, gr_da_up)), gr_seqlet_peaks_tfs)),
+  length(filter_by_overlaps(gr_seqlet_peaks_tfs, filter_by_non_overlaps(gr_da_tested, c(gr_da_down, gr_da_up))))) %>%
+  mutate(n_peaks_nondetecting=n_peaks - n_peaks_detecting,
+         frac_detecting=n_peaks_detecting/n_peaks)
+
+df_da_motif_intersect
+```
+
+### Testing 
+```{r}
+df_da_motif_intersect %>%
+  filter(set %in% c("da_down", "da_nonsig")) %>%
+  dplyr::select(n_peaks_detecting, n_peaks_nondetecting) %>%
+  fisher.test()
+df_da_motif_intersect %>%
+  filter(set %in% c("da_down", "da_up")) %>%
+  dplyr::select(n_peaks_detecting, n_peaks_nondetecting) %>%
+  fisher.test()
+df_da_motif_intersect %>%
+  filter(set %in% c("da_up", "da_nonsig")) %>%
+  dplyr::select(n_peaks_detecting, n_peaks_nondetecting) %>%
+  fisher.test()
+```
+
+### Seqlets in DA down peaks
+```{r tbl_tf_dn}
+df_tfs_down
+```
+
+### Seqlets in DA up peaks
+```{r tbl_tf_up}
+df_tfs_up
+```
+
+
+```{r plt_tf_enriched, fig.width=6, fig.height=6}
+df_tfs_down %>%
+  filter(l2rc >= 0, n_detected>=50) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=top_tf, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05), point.padding=1) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'blue3'), guide='none') +
+  labs(x="log2 fold-change", y="-log10(p-value)", title="Seqlet enrichment in down-regulated peaks")
+
+df_tfs_up %>%
+  filter(l2rc >= 0, n_detected>=50) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=top_tf, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05)) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'red2'), guide='none') +
+  labs(x="log2 fold-change", y="-log10(p-value)", title="Seqlet enrichment in up-regulated peaks")
+```
+
+### Export
+```{r save_plt_tf_enriched, fig.width=6, fig.height=6}
+df_tfs_down %>%
+  filter(l2rc >= 0, n_detected>=50) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=top_tf, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05), point.padding=1) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'blue3'), guide='none') +
+  labs(x="log2 fold-change", y="-log10(p-value)")
+
+ggsave(filename=OUTPUT_FIG_DA_DOWN_ENRICHED)
+
+df_tfs_up %>%
+  filter(l2rc >= 0, n_detected>=50) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=top_tf, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05)) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'red2'), guide='none') +
+  labs(x="log2 fold-change", y="-log10(p-value)")
+
+ggsave(filename=OUTPUT_FIG_DA_UP_ENRICHED)
+```
+
+
+```{r export_enrich_tbl}
+bind_rows(
+  tibble(test="enrichment in DA down peaks", df_tfs_down),
+  tibble(test="enrichment in DA up peaks", df_tfs_up)
+) %>%
+  dplyr::rename(seqlet_top_tf_annot=top_tf,
+                n_seqlet_da=n_sig,
+                rate_seqlet_in_da=frac_sig,
+                n_da_peaks=n_total,
+                n_seqlet_peaks=n_detected,
+                rate_seqlet_in_all=rate_detected) %>%
+  dplyr::select(test, seqlet_top_tf_annot, 
+                l2rc, p_value, q_value,
+                n_seqlet_da, n_da_peaks, n_seqlet_peaks,
+                rate_seqlet_in_all, rate_seqlet_in_da,
+                statistic) %>%
+  write_xlsx(OUTPUT_XLSX_ENRICHMENT)
+```
+
+## Co-occupancy
+Are some significant TFs participating with others more than they do in the background?
+
+For each significant TF, we will compute whether the rate of getting a co-occupancy is higher in the significant set than it was in the total set, all conditioned on the TF being present. Thus, we need:
+- total peaks with A
+- total peaks with A + B
+- significant peaks with A
+- significant peaks with A + B
+
+Then we will compute the background rate as n_tot_AB/n_tot_A and have a binimial test for getting n_sig_AB in n_sig_A peaks.
+
+```{r}
+df_seqlet_peak_overlaps <- gr_seqlet_peaks_tfs %>%
+  join_overlap_self(minoverlap=501L) %>%
+  filter(top_tf <= top_tf.overlap) %>%
+  as_tibble() %>%
+  group_by(seqnames, start, end, strand) %>%
+  summarize(top_tfs=str_c(sort(unique(c(top_tf, top_tf.overlap))), collapse=","),
+            .groups='drop') %>%
+  mutate(n_tfs=str_count(top_tfs, ",") + 1)
+
+df_tfs_down %>%
+  filter(q_value < 0.05)
+
+gr_seqlet_overlaps_tested <- df_seqlet_peak_overlaps %>%
+    as_granges() %>%
+    filter_by_overlaps(gr_da_tested)
+
+
+compute_tf_cooccupant_tbl <- function (gr_peaks_all, gr_peaks_sig, tf_id,
+                                       alternative='greater',
+                                       min_n_cond_both=20L) {
+  gr_tff_containing_all <- gr_peaks_all %>%
+    filter(str_detect(top_tfs, tf_id))
+  
+  n_total_cond <- length(gr_tff_containing_all)
+  
+  df_n_both_cond <- gr_tff_containing_all %>%
+    as_tibble() %>%
+    separate_rows(top_tfs, sep=",") %>%
+    filter(top_tfs != tf_id | n_tfs == 1) %>%
+    count(top_tfs, name="n_both_cond")
+  
+  gr_tff_containing_sig <- gr_tff_containing_all %>%
+    filter_by_overlaps(gr_peaks_sig)
+  
+  n_total_sig <- length(gr_tff_containing_sig)
+  
+  df_n_both_sig <- gr_tff_containing_sig %>%
+    as_tibble() %>%
+    separate_rows(top_tfs, sep=",") %>%
+    filter(top_tfs != tf_id | n_tfs == 1) %>%
+    count(top_tfs, name="n_both_sig")
+  
+  right_join(df_n_both_cond, df_n_both_sig, by="top_tfs") %>%
+    dplyr::rename(tf_test=top_tfs) %>%
+    mutate(tf_cond=tf_id,
+           tf_test=ifelse(tf_test == tf_id, NA, tf_test)) %>%
+    mutate(n_total_cond=n_total_cond, n_total_sig=n_total_sig) %>%
+    mutate(frac_both_cond=n_both_cond/n_total_cond,
+           frac_both_sig=n_both_sig/n_total_sig) %>%
+    filter(n_both_cond >= min_n_cond_both) %>%
+    rowwise() %>%
+    mutate(
+      res=list(binom.test(n_both_sig, n_total_sig, 
+                          p=frac_both_cond,
+                          alternative=alternative)),
+      p_value=res$p.value,
+      statistic=res$statistic
+    ) %>%
+    select(-res) %>%
+    ungroup() %>%
+    mutate(q_value=p.adjust(p_value, method="BH"),
+           l2rc=log2(frac_both_sig/frac_both_cond)) %>%
+    arrange(q_value) %>%
+    select(tf_cond, tf_test, everything())
+}
+
+
+df_sig_down_cooccupancy <- df_tfs_down %>%
+  filter(q_value < 0.05) %>%
+  pull(top_tf) %>%
+  map_df(~ compute_tf_cooccupant_tbl(gr_seqlet_overlaps_tested,
+                                     gr_da_down, .x))
+
+df_sig_up_cooccupancy <- df_tfs_up %>%
+  filter(q_value < 0.05) %>%
+  pull(top_tf) %>%
+  map_df(~ compute_tf_cooccupant_tbl(gr_seqlet_overlaps_tested,
+                                     gr_da_up, .x))
+```
+
+
+### Significant Down TFs with Co-occupancy
+```{r tbl_sig_down_cooccupy}
+df_sig_down_cooccupancy %>%
+  filter(q_value < 0.05) %>%
+  arrange(q_value)
+```
+
+```{r plt_sig_down_cooccupy, fig.width=12, fig.height=12}
+df_sig_down_cooccupancy %>%
+  group_by(tf_cond) %>%
+  filter(any(q_value < 0.05)) %>%
+  ungroup() %>%
+  filter(l2rc >= 0) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=tf_test, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05), point.padding=1) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'red2'), guide='none') +
+  facet_wrap(vars(tf_cond)) +
+  labs(x="log2 fold-change", y="-log10(p-value)", title="Seqlet enrichment in down-regulated peaks")
+```
+
+
+### Significant Up TFs with Co-occupancy
+```{r tbl_sig_up_cooccupy}
+df_sig_up_cooccupancy %>%
+  filter(q_value < 0.05) %>%
+  arrange(q_value)
+```
+
+```{r plt_sig_up_cooccupy, fig.width=12, fig.height=12}
+df_sig_up_cooccupancy %>%
+  group_by(tf_cond) %>%
+  filter(any(q_value < 0.05)) %>%
+  ungroup() %>%
+  filter(l2rc >= 0) %>%
+  ggplot(aes(x=l2rc, y=-log10(p_value), label=tf_test, color=q_value < 0.05)) +
+  geom_point() +
+  geom_text_repel(aes(alpha=q_value<0.05, size=q_value<0.05), point.padding=1) +
+  scale_alpha_manual(values=c(0,1), guide='none') +
+  scale_size_manual(values=c(0,3), guide='none') +
+  scale_color_manual(values=c('black', 'red2'), guide='none') +
+  facet_wrap(vars(tf_cond)) +
+  labs(x="log2 fold-change", y="-log10(p-value)", title="Seqlet enrichment in up-regulated peaks")
+```
+
+
+## Seqlets Across Development
+```{r compute_seqlet_weights}
+wt_pcw_linear <- matrix(seq(-1,1, length=14), nrow=14)
+wt_pcw_binary <- matrix(rep(c(-1,1), each=7), nrow=14)
+df_seqlet_weights <- full_join(
+  tibble(peak_id=rownames(mat_peak_sample), wt_pcw_seqlets_linear=as.numeric(mat_peak_sample %*% wt_pcw_linear)),
+  tibble(peak_id=rownames(mat_peak_sample), wt_pcw_seqlets_binary=as.numeric(mat_peak_sample %*% wt_pcw_binary)),
+  by="peak_id"
+)
+
+gr_seqlet_weights <- df_seqlet_weights %>%
+  separate(peak_id, into=c("seqnames", "range"), sep=":", remove=FALSE) %>%
+  separate(range, into=c("start", "end"), sep="-", remove=TRUE) %>%
+  mutate(across(c(start, end), as.integer)) %>%
+  makeGRangesFromDataFrame(keep.extra.columns = TRUE)
+```
+
+
+```{r plt_wt_dist}
+df_seqlet_weights %>%
+  ggplot(aes(x=wt_pcw_seqlets_binary)) +
+  geom_histogram(binwidth=1, fill='steelblue2', color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="PCW Index (binary midpoint)", y="Seqlet Peaks")
+
+df_seqlet_weights %>%
+  ggplot(aes(x=wt_pcw_seqlets_linear)) +
+  geom_histogram(binwidth=0.5, fill='steelblue2', color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="PCW Index (linear)", y="Seqlet Peaks")
+```
+
+
+```{r}
+df_wt_da_down <- join_overlap_inner(gr_da_down, gr_seqlet_weights) %>%
+  as_tibble() %>%
+  group_by(name) %>%
+  summarize(mean_wt_linear=mean(wt_pcw_seqlets_linear),
+            mean_wt_binary=mean(wt_pcw_seqlets_binary)) %>%
+  mutate(test_result="Down")
+
+df_wt_da_up <- join_overlap_inner(gr_da_up, gr_seqlet_weights) %>%
+  as_tibble() %>%
+  group_by(name) %>%
+  summarize(mean_wt_linear=mean(wt_pcw_seqlets_linear),
+            mean_wt_binary=mean(wt_pcw_seqlets_binary)) %>%
+  mutate(test_result="Up")
+
+df_wt_da_none <- gr_da_tested %>%
+  filter_by_non_overlaps(gr_da_down) %>%
+  filter_by_non_overlaps(gr_da_up) %>%
+  join_overlap_inner(gr_seqlet_weights) %>%
+  as_tibble() %>%
+  group_by(name) %>%
+  summarize(mean_wt_linear=mean(wt_pcw_seqlets_linear),
+            mean_wt_binary=mean(wt_pcw_seqlets_binary)) %>%
+  mutate(test_result="NS")
+
+df_wts_tested <- bind_rows(
+  df_wt_da_down,
+  df_wt_da_none,
+  df_wt_da_up
+) %>%
+  mutate(test_result=fct(test_result, levels=c("Down", "NS", "Up")))
+```
+
+
+```{r plt_weighted_tests_box, fig.width=3, fig.height=4}
+df_wts_tested %>%
+  ggplot(aes(x=test_result, y=mean_wt_linear, fill=test_result)) +
+  geom_boxplot(outliers=FALSE) +
+  scale_fill_manual(values=c('blue2', 'grey80', 'red2'), guide='none') +
+  labs(x="DA Peak in HSC Development",
+       y="Mean PCW Index (linear)")
+
+df_wts_tested %>%
+  ggplot(aes(x=test_result, y=mean_wt_binary, fill=test_result)) +
+  geom_boxplot(outliers=FALSE) +
+  scale_fill_manual(values=c('blue2', 'grey80', 'red2'), guide='none') +
+  labs(x="DA Peak in HSC Development",
+       y="Mean PCW Index (binary midpoint)")
+```
+
+
+```{r plt_weighted_tests_hist, fig.width=4, fig.height=4}
+df_wts_tested %>%
+  ggplot(aes(x=mean_wt_linear, fill=test_result)) +
+  geom_histogram(binwidth=0.5, color='black') +
+  facet_grid(rows=vars(fct_rev(test_result)), scales='free_y') +
+  scale_fill_manual(values=c('blue2', 'grey80', 'red2'), guide='none') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="Mean PCW Index (linear)")
+
+df_wts_tested %>%
+  ggplot(aes(x=mean_wt_binary, fill=test_result)) +
+  geom_histogram(binwidth=1, color='black') +
+  facet_grid(rows=vars(fct_rev(test_result)), scales='free_y') +
+  scale_fill_manual(values=c('blue2', 'grey80', 'red2'), guide='none') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="Mean PCW Index (binary midpoint)")
+```
+
+# Conclusions
+
+
+
+
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

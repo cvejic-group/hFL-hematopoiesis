@@ -1,0 +1,231 @@
+---
+title: "ChromBPNet Model Statistics - HSC PCW"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+This analysis summarizes the fit statistics for the ChromBPNet model trainings of HSC models in developmental time.
+
+Text under each metric is adapted from the ChromBPNet training and quality check report.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(jsonlite)
+library(magrittr)
+library(tidyverse)
+library(showtext)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20251103)
+
+FILES_JSON_PATTERN="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/pretrained_bias/HSC_PCW*/fold_*/evaluation/*._chrombpnet_metrics.json"
+
+CSV_FRAGS="/work/aaa/projects/chrombpnet-devmult/scratch/frags/hsc_pcw_fragcts.csv"
+
+COLS_PCW=c(
+  "HSC_PCW5"="#FFBF00",
+  "HSC_PCW6"="#ff986d",
+  "HSC_PCW7"="#ff8782",
+  "HSC_PCW8"="#ff7b9b",
+  "HSC_PCW9"="#f176b4",
+  "HSC_PCW10"="#d97fce",
+  "HSC_PCW11"="#b989e2",
+  "HSC_PCW12"="#9094ed",
+  "HSC_PCW13"="#60a4f2",
+  "HSC_PCW14"="#32b1eb",
+  "HSC_PCW15"="#29badb",
+  "HSC_PCW16"="#4bc0c8",
+  "HSC_PCW17"="#8dd7db",
+  "HSC_PCW18"="#c0dedf")
+
+theme_set(theme_bw())
+```
+
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+df_frags <- read_csv(CSV_FRAGS) %>%
+  mutate(sample_id=fct(sample_id, levels=names(COLS_PCW)))
+
+df_metrics <- tibble(file=Sys.glob(FILES_JSON_PATTERN)) %>%
+  mutate(sample=str_match(file, "([^/]+)/fold")[,2]) %>%
+  filter(sample %in% names(COLS_PCW)) %>%
+  mutate(sample=fct(sample, levels=names(COLS_PCW))) %>%
+  mutate(fold=str_match(file, "fold_([0-9]+)/")[,2]) %>%
+  mutate(raw_metrics=map(file, fromJSON)) %>%
+  mutate(spearmanr=sapply(raw_metrics, function (l) l$counts_metrics$peaks$spearmanr),
+         pearsonr=sapply(raw_metrics, function (l) l$counts_metrics$peaks$pearsonr),
+         mse=sapply(raw_metrics, function (l) l$counts_metrics$peaks$mse),
+         median_jsd=sapply(raw_metrics, function (l) l$profile_metrics$peaks$median_jsd),
+         median_norm_jsd=sapply(raw_metrics, function (l) l$profile_metrics$peaks$median_norm_jsd)) %>%
+  mutate(raw_metrics=NULL)
+```
+
+# Analysis
+
+## Total Fragments in Peaks
+This is a summary of the number of fragments present in the peaks used for model training. Note this is overall and not per fold.
+
+```{r nfrags, fig.width=2.96, fig.height=2.0}
+df_frags %>%
+  ggplot(aes(x=sample_id, y=n_frags/1e6, fill=sample_id)) +
+  geom_bar(stat='identity', color='black', linewidth=0.3) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), trans="log10") +
+  labs(x=NULL, y="Fragments in Peaks (M)") +
+  theme(axis.title.y=element_text(size=8))
+
+ggsave("figures/suppl-fig-chrombpnet-nfragments-hsc-pcw.pdf", dpi=300)
+```
+
+## Counts Metrics
+Counts metrics characterize how well the predicted counts in peaks reproduce the observed counts.
+
+### Spearman's rho - Overall
+Higher Spearman's rho in peaks is better.
+
+```{r spearmanr, fig.width=3, fig.height=2.0}
+df_metrics %>%
+  ggplot(aes(x=sample, y=spearmanr)) +
+  stat_summary(aes(fill=sample), fun='mean', geom='bar', color='black', linewidth=0.3) +
+  stat_summary(fun.data=mean_se, fun.args=list(mult=2), geom='errorbar', color='black', linewidth=0.5, width=0.7) +
+  geom_jitter(height=0, width=0.15, size=0.5) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Spearman's ρ") +
+  theme(axis.title.y=element_text(size=8))
+
+showtext_auto()
+ggsave("figures/suppl-fig-chrombpnet-metric-spearman-hsc-pcw.pdf", dpi=300)
+showtext_auto(FALSE)
+```
+
+
+### Pearson's rho - Overall
+The Pearson's rho in peaks should be greater than 0.5 (higher the better).
+
+```{r pearsonr, fig.width=3, fig.height=2.0}
+df_metrics %>%
+  ggplot(aes(x=sample, y=pearsonr)) +
+  stat_summary(aes(fill=sample), fun='mean', geom='bar', color='black', linewidth=0.3) +
+  stat_summary(fun.data=mean_se, fun.args=list(mult=2), geom='errorbar', color='black', linewidth=0.5, width=0.7) +
+  geom_jitter(height=0, width=0.15, size=0.5) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Pearson's ρ") +
+  theme(axis.title.y=element_text(size=8))
+
+showtext_auto()
+ggsave("figures/suppl-fig-chrombpnet-metric-pearson-hsc-pcw.pdf", dpi=300)
+showtext_auto(FALSE)
+```
+
+### MSE - Overall
+MSE (Mean Squared Error) should be low in peaks. 
+
+```{r mse, fig.width=3, fig.height=2.0}
+df_metrics %>%
+  ggplot(aes(x=sample, y=mse)) +
+  stat_summary(aes(fill=sample), fun='mean', geom='bar', color='black', linewidth=0.3) +
+  stat_summary(fun.data=mean_se, fun.args=list(mult=2), geom='errorbar', color='black', linewidth=0.5, width=0.7) +
+  geom_jitter(height=0, width=0.15, size=0.5) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="MSE") +
+  theme(axis.title.y=element_text(size=8))
+
+ggsave("figures/suppl-fig-chrombpnet-metric-mse-hsc-pcw.pdf", dpi=300)
+```
+
+## Profile Metrics
+Profile metrics are about how well the predicted shapes of peaks reproduce the observed shapes.
+
+### JSD - Overall
+Lower median JSD (Jensen Shannon Divergence between observed and predicted) is better. JSD is sensitive to read-depth.
+Higher read-depth results in better metrics.
+
+```{r jsd, fig.width=3.17, fig.height=2.0}
+df_metrics %>%
+  ggplot(aes(x=sample, y=median_jsd)) +
+  stat_summary(aes(fill=sample), fun='mean', geom='bar', color='black', linewidth=0.3) +
+  stat_summary(fun.data=mean_se, fun.args=list(mult=2), geom='errorbar', color='black', linewidth=0.5, width=0.7) +
+  geom_jitter(height=0, width=0.15, size=0.5) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Jensen-Shannon\nDivergence (median)") +
+  theme(axis.title.y=element_text(size=8))
+
+ggsave("figures/suppl-fig-chrombpnet-metric-jsd-hsc-pcw.pdf", dpi=300)
+```
+
+
+### Normalized Median JSD - Overall
+Median norm JSD is median of the min-max normalized JSD where min JSD is the worst case JSD, i.e, JSD of observed with 
+uniform profile and max JSD is the best case JSD, i.e, 0. Median norm JSD is higher the better. Median norm JSD is 
+sensitive to read-depth. Higher read-depth results in better metrics.
+
+```{r norm_jsd, fig.width=3.34, fig.height=2.0}
+df_metrics %>%
+  ggplot(aes(x=sample, y=median_norm_jsd)) +
+  stat_summary(aes(fill=sample), fun='mean', geom='bar', color='black', linewidth=0.3) +
+  stat_summary(fun.data=mean_se, fun.args=list(mult=2), geom='errorbar', color='black', linewidth=0.5, width=0.7) +
+  geom_jitter(height=0, width=0.15, size=0.5) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90), labels=function(x) sub("^HSC_PCW", "PCW ", x)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Jensen-Shannon\nDivergence\n(median normalized)") +
+  theme(axis.title.y=element_text(size=8))
+
+ggsave("figures/suppl-fig-chrombpnet-metric-normjsd-hsc-pcw.pdf", dpi=300)
+```
+
+# Conclusion
+
+All models are very well-fitted for counts. Some of the PCWs had higher JSD for profile metric 
+(e.g., PCW 5, 12, 15), but that is consistent with having lower coverage for these.
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

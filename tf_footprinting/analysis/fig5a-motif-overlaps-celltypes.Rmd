@@ -1,0 +1,541 @@
+---
+title: "Motif Overlaps - Cell Type"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+Here we explore the overlaps between seqlets detected across all cell types.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+  library(magrittr)
+  library(tidyverse)
+  library(SummarizedExperiment)
+  library(Matrix)
+  library(matrixStats)
+  library(viridis)
+  library(pheatmap)
+})
+```
+
+## Parameters
+```{r set_params}
+set.seed(20240111)
+
+SE_SEQLET_CELLTYPE="pipeline/results/overlaps/chrombpnet_nobias/pretrained_bias/celltypes/counts/se_seqlets_celltypes.Rds"
+
+CELLTYPES=c(
+  "HSC", "GP", "Granulocyte",
+  "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
+  "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
+  "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
+  "LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+  "NK", "ILCP", "T",
+  "Hepatocyte", "Endothelia"
+)
+
+CT_LINEAGE=c(
+  "HSC"="HSC",
+  "GP"="Granulocyte", "Granulocyte"="Granulocyte",
+  "MEMP-t"="Transient",
+  "MEMP"="MEMP", "MEP"="MEMP", "MEMP-Mast-Ery"="MEMP",
+  "MEMP-Ery"="Ery", "Early-Ery"="Ery", "Late-Ery"="Ery",
+  "MEMP-MK"="MK", "MK"="MK",
+  "MastP-t"="Transient",
+  "MastP"="Mast", "Mast"="Mast",
+  "MDP"="Transient", 
+  "Monocyte"="Mono-macro", "Kupffer"="Mono-macro", 
+  "cDC1"="DC", "cDC2"="DC", "pDC"="DC", "ASDC"="DC",
+  "LMPP"="LMP", "LP"="LMP", "Cycling-LP"="LMP",
+  "PreProB"="B", "ProB-1"="B", "ProB-2"="B", "Large-PreB"="B", "Small-PreB"="B", "IM-B"="B",
+  "NK"="NK", "ILCP"="ILCP", "T"="T",
+  "Hepatocyte"="Hepatocyte", "Endothelia"="Endothelia"
+)
+
+SCAV_COLS=colorRampPalette(c("#F9F6F4", "#F1DEDA", "#C684AA", "#6B4E80", "#4D4665"))(100)
+SCAV_COLS_REV=rev(SCAV_COLS)
+
+theme_set(theme_bw())
+```
+
+## Functions
+
+```{r methods}
+norm_frac_rowmax <- function (m) { m / rowMaxs(m) }
+norm_frac_rowsum <- function (m) { m / rowSums(m) }
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+se_seqlet_celltype <- readRDS(SE_SEQLET_CELLTYPE)
+
+cts_seqlet_celltype <- assay(se_seqlet_celltype, "counts")
+```
+
+
+# Analysis
+
+## CTCF
+```{r ctcf, fig.width=8, fig.height=8}
+rowData(se_seqlet_celltype) %>% as_tibble() %>%
+  filter(top_tf == "CTCF") %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=1) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS)
+
+rowData(se_seqlet_celltype) %>% as_tibble() %>%
+  filter(top_tf == "CTCF") %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=1) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>% t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+
+## ETV6
+```{r etv6, fig.width=5, fig.height=8}
+rowData(se_seqlet_celltype) %>% as_tibble() %>%
+  filter(top_tf == "ETV6") %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=2) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS)
+
+rowData(se_seqlet_celltype) %>% as_tibble() %>%
+  filter(top_tf == "ETV6") %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=1) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>% t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+## Top Variable Patterns
+
+```{r plot_variance_patterns, fig.width=5, fig.height=4}
+df_patterns <- rowData(se_seqlet_celltype) %>% as_tibble() %>%
+  mutate(mu_pattern=rowMeans(cts_seqlet_celltype),
+         var_pattern=rowVars(cts_seqlet_celltype)) %>%
+  mutate(mu_pattern_frac=rowMeans(norm_frac_rowmax(cts_seqlet_celltype)),
+         var_pattern_frac=rowVars(norm_frac_rowmax(cts_seqlet_celltype))) %>%
+  mutate(entropy=norm_frac_rowsum(cts_seqlet_celltype) %>% { . * log2(.) } %>% `[<-`(is.na(.), 0) %>% rowSums())
+
+df_patterns %>%
+  ggplot(aes(x=mu_pattern, y=var_pattern)) +
+  geom_point(size=0.4, alpha=0.3) +
+  labs(x="Mean overlap counts", y="Variance overlap counts")
+
+df_patterns %>%
+  ggplot(aes(x=mu_pattern, y=var_pattern/mu_pattern)) +
+  geom_point(size=0.4, alpha=0.3) +
+  labs(x="Mean overlap counts", y="Variance/Mean overlap counts")
+
+df_patterns %>%
+  ggplot(aes(x=mu_pattern_frac, y=var_pattern_frac)) +
+  geom_point(size=0.4, alpha=0.3) +
+  labs(x="Mean overlap fraction", y="Variance overlap fraction")
+
+df_patterns %>%
+  ggplot(aes(x=mu_pattern_frac, y=var_pattern_frac/mu_pattern_frac)) +
+  geom_point(size=0.4, alpha=0.3) +
+  labs(x="Mean overlap fraction", y="Variance/Mean overlap fraction")
+
+df_patterns %>%
+  ggplot(aes(x=n_seqlets, y=entropy)) +
+  geom_point(size=0.4, alpha=0.3) +
+  labs(x="Seqlets", y="Variance overlap counts")
+```
+
+```{r tbl_variance_patterns, fig.width=5, fig.height=4}
+df_patterns %>%
+  arrange(-var_pattern) %>%
+  head(n=30)
+
+df_patterns %>%
+  arrange(-var_pattern/mu_pattern) %>%
+  head(n=30)
+
+df_patterns %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern)
+
+df_patterns %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern/mu_pattern)
+
+df_patterns %>%
+  filter(!top_tf %in% c("CTCF", "ETV6", "SPI1", "SPIB")) %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern/mu_pattern, n=2)
+
+df_patterns %>%
+  filter(n_seqlets >= 300) %>%
+  group_by(sample_id) %>%
+  slice_max(entropy, n=5)
+```
+
+### Top Variance Patterns
+```{r fig.width=8, fig.height=8}
+mat_subset <- df_patterns %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>% t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2"))
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+
+### Top Variance/Mean Patterns
+```{r fig.width=8, fig.height=8}
+mat_subset<- df_patterns %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern/mu_pattern) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) 
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+### Top Variance/Mean Patterns - Selected
+```{r fig.width=8, fig.height=8}
+mat_subset<- df_patterns %>%
+  filter(!top_tf %in% c("CTCF", "ETV6", "SPI1", "SPIB")) %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern/mu_pattern) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) 
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+### Top Unique Patterns
+```{r fig.width=12, fig.height=8}
+mat_subset<- df_patterns %>%
+  filter(top_tf != "CTCF") %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern/mu_pattern, n=10) %>%
+  group_by(top_tf) %>%
+  slice_max(n_seqlets, n=2) %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=2) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) 
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+mat_subset %>%
+  pheatmap(cluster_rows=TRUE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+### Top Unique Patterns - Fractions
+```{r fig.width=12, fig.height=8}
+mat_subset<- df_patterns %>%
+  filter(top_tf != "CTCF") %>%
+  group_by(sample_id) %>%
+  slice_max(var_pattern_frac, n=10) %>%
+  group_by(top_tf) %>%
+  slice_max(n_seqlets, n=1) %>%
+  group_by(sample_id) %>%
+  slice_max(n_seqlets, n=2) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) 
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+
+### Top Unique Patterns - Lineage
+```{r fig.width=12, fig.height=8}
+mat_subset<- df_patterns %>%
+  filter(top_tf != "CTCF") %>%
+  mutate(lineage=CT_LINEAGE[sample_id]) %>%
+  group_by(lineage) %>%
+  slice_max(var_pattern/mu_pattern, n=5) %>%
+  group_by(lineage, top_tf) %>%
+  slice_max(n_seqlets, n=1) %>%
+  ungroup() %>%
+  group_by(lineage) %>%
+  slice_max(n_seqlets, n=3) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t() %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2"))
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+
+
+### Top Entropy Patterns - Lineage
+```{r fig.width=12, fig.height=8}
+mat_subset<- df_patterns %>%
+  filter(top_tf != "CTCF", n_seqlets >= 300) %>%
+  mutate(lineage=CT_LINEAGE[sample_id]) %>%
+  group_by(lineage) %>%
+  slice_max(entropy, n=5) %>%
+  group_by(lineage, top_tf) %>%
+  slice_max(n_seqlets, n=2) %>%
+  ungroup() %>%
+  group_by(lineage) %>%
+  slice_max(entropy, n=3) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t()
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\1.\\2")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+
+### Top Entropy Patterns - Celltype
+```{r fig.width=12, fig.height=7}
+mat_subset<- df_patterns %>%
+  filter(top_tf != "CTCF", n_seqlets >= 300) %>%
+  group_by(sample_id) %>%
+  slice_max(entropy, n=5) %>%
+  group_by(top_tf) %>%
+  slice_max(n_seqlets, n=5) %>%
+  ungroup() %>%
+  group_by(sample_id) %>%
+  slice_max(entropy*n_seqlets, n=2) %>%
+  mutate(celltype=fct(sample_id, levels=CELLTYPES)) %>%
+  arrange(celltype) %>%
+  pull(pattern_id) %>%
+  { cts_seqlet_celltype[., CELLTYPES] } %>%
+  norm_frac_rowmax() %>%
+  t()
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.(pos|neg)_pattern_([0-9]+)\\.(.*)$", "\\4 (\\1.\\3)")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.(pos|neg)_pattern_([0-9]+)\\.(.*)$", "\\4 (\\1.\\3)")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01),
+           filename="figures/fig5a-seqlet-celltype-overlaps-wide.pdf", width=12, height=7)
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.(pos|neg)_pattern_([0-9]+)\\.(.*)$", "\\4 (\\1.\\3)")) %>%
+  t() %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01),
+           filename="figures/fig5a-seqlet-celltype-overlaps-tall.pdf", width=7, height=11)
+```
+
+### Clustered
+```{r fig.width=12, fig.height=8}
+hc_full <- mat_subset %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_subset)) %>%
+  as.hclust()
+
+mat_subset %>%
+  `colnames<-`(str_replace(colnames(.), "^([^.]+)\\.[^.]+\\.(.*)$", "\\2 (\\1)")) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=hc_full, color=SCAV_COLS, breaks=seq(0,1,0.01))
+```
+
+```{r polished_names, fig.width=12, fig.height=7}
+names_clean <- colnames(mat_subset) %>%
+  str_replace("^([^.]+)\\.(pos|neg)_pattern_([0-9]+)\\.(.*)$", "\\4_\\3") %>%
+  str_replace("^ZN([0-9]+)", "ZNF\\1") %>%
+  str_replace("^GATA([0-9]+)", "GATA*") %>%
+  str_replace("^CEBP([A-Z]+)", "CEBP*/HLF") %>%
+  str_replace("^IRF[0-9]+", "IRF*") %>%
+  str_replace("^MEF2[A-Z]+", "MEF2*") %>%
+  str_replace("^PAX[0-9]+", "PAX*") %>%
+  str_replace("^HXA9", "HOXA9") %>% {
+    dup_names <- unique(.[duplicated(.)])
+    for (dup_name in dup_names) {
+      idx_dup <- which(. == dup_name)
+      .[idx_dup] <- str_c(.[idx_dup], ".", seq_along(idx_dup))
+    }
+    .
+  }
+
+mat_subset %>%
+  `colnames<-`(names_clean) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01))
+
+mat_subset %>%
+  `colnames<-`(names_clean) %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01),
+           filename="figures/fig5a-seqlet-celltype-overlaps-wide-rename.pdf", width=12, height=7)
+
+mat_subset %>%
+  `colnames<-`(names_clean) %>% t() %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE, color=SCAV_COLS, breaks=seq(0,1,0.01),
+           filename="figures/fig5a-seqlet-celltype-overlaps-tall-rename.pdf", width=7, height=11)
+```
+
+
+# Conclusion
+
+<!--
+What was found?
+Clearly state conclusions.
+Was there anything unexpected?
+Are there unanswered questions?
+What should be worked on next?
+-->
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

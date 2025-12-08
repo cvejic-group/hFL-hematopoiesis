@@ -1,0 +1,924 @@
+---
+title: "Compare HSC Seqlets over Development"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+Here we compare seqlets called in different PCWs, but derived from the same initial peak set ("unified").
+
+In particular, we are interested to know if the models trained on week-specific data have differential seqlet inference. Thus, we will look at number of seqlets called per week and test if any have bias in developmental time.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(scales)
+library(GenomicFeatures)
+library(GenomicRanges)
+library(ChIPseeker)
+library(plyranges)
+library(rtracklayer)
+library(pheatmap)
+library(BiocParallel)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20250709)
+BiocParallel::register(MulticoreParam(8L))
+
+BED_PEAKS="/work/aaa/projects/chrombpnet-devmult/pipeline/resources/peaks/unified/HSC.unified.bed"
+
+BEDPE_SEQLETS=c(
+  "HSC_PCW5"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW5/mean/modisco/HSC_PCW5_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW6"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW6/mean/modisco/HSC_PCW6_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW7"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW7/mean/modisco/HSC_PCW7_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW8"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW8/mean/modisco/HSC_PCW8_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW9"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW9/mean/modisco/HSC_PCW9_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW10"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW10/mean/modisco/HSC_PCW10_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW11"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW11/mean/modisco/HSC_PCW11_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW12"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW12/mean/modisco/HSC_PCW12_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW13"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW13/mean/modisco/HSC_PCW13_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW14"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW14/mean/modisco/HSC_PCW14_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW15"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW15/mean/modisco/HSC_PCW15_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW16"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW16/mean/modisco/HSC_PCW16_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW17"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW17/mean/modisco/HSC_PCW17_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW18"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW18/mean/modisco/HSC_PCW18_mean.counts_scores.top_tf.bedpe.gz"
+)
+
+TXDB_FILE="/work/DevM_analysis/data/refdata-cellranger-arc-GRCh38-2020-A-2.0.0_genes/cellranger-2020-A-2.0.0.txdb"
+
+COLS_PCW=c(
+  "HSC_PCW5"="#FFBF00",
+  "HSC_PCW6"="#ff986d",
+  "HSC_PCW7"="#ff8782",
+  "HSC_PCW8"="#ff7b9b",
+  "HSC_PCW9"="#f176b4",
+  "HSC_PCW10"="#d97fce",
+  "HSC_PCW11"="#b989e2",
+  "HSC_PCW12"="#9094ed",
+  "HSC_PCW13"="#60a4f2",
+  "HSC_PCW14"="#32b1eb",
+  "HSC_PCW15"="#29badb",
+  "HSC_PCW16"="#4bc0c8",
+  "HSC_PCW17"="#8dd7db",
+  "HSC_PCW18"="#c0dedf")
+
+theme_set(theme_bw())
+```
+
+## Functions
+
+```{r methods}
+read_bedpe_tff <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf", "score", "strand", "tff_id"),
+           col_types="cii___cdc__c") %>%
+    mutate(pattern_type=str_extract(tff_id, "^[^_]+"),
+           pattern_idx=as.integer(str_extract(tff_id, "(neg|pos)_patterns\\.pattern_([0-9]+)", group=2))) %>%
+    as_granges() %>%
+    unique()
+}
+
+read_bedpe_target <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end"),
+           col_types="___cii______") %>%
+    as_granges() %>%
+    unique()
+}
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+gr_atac_peaks <- read_narrowpeaks(BED_PEAKS)
+
+df_seqlet_peaks <- enframe(BEDPE_SEQLETS, name="sample_id", value="file") %>%
+  mutate(gr_seqlet_peaks=map(file, read_bedpe_target),
+         gr_seqlets=map(file, read_bedpe_tff)) %>%
+  select(sample_id, gr_seqlet_peaks, gr_seqlets)
+
+txdb <- loadDb(TXDB_FILE)
+```
+
+## Preprocessing
+```{r prepare_data}
+gr_all <- Reduce(intersect, df_seqlet_peaks$gr_seqlet_peaks)
+
+gr_any <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>% reduce
+  
+df_seqlet_peaks %<>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_unified=length(gr_atac_peaks),
+         n_seqlet_peaks=map_int(gr_seqlet_peaks, length),
+         n_seqlets=map_int(gr_seqlets, length)) %>%
+  mutate(frac_seqlet_peak=n_seqlet_peaks/n_unified)
+
+mat_peak_sample <- lapply(df_seqlet_peaks$gr_seqlet_peaks, function (gr) {
+  countOverlaps(gr_atac_peaks, gr, minoverlap=500L)
+}) %>% do.call(what=cbind) %>%
+  `rownames<-`(gr_atac_peaks$name) %>%
+  `colnames<-`(df_seqlet_peaks$sample_id)
+
+mat_nuniqseqlets <- outer(df_seqlet_peaks$gr_seqlets, 
+                          df_seqlet_peaks$gr_seqlets,
+                          Vectorize(function(x,y) {
+                            length(filter_by_non_overlaps(x, y, minoverlap=25L)) })
+                          ) %>%
+  `colnames<-`(df_seqlet_peaks$sample_id) %>%
+  `rownames<-`(df_seqlet_peaks$sample_id)
+```
+
+### Annotations
+```{r annot_raw_peaks}
+annots_atac_peaks <- annotatePeak(gr_atac_peaks, level="gene", TxDb=txdb, tssRegion=c(-1000,1000), annoDb="org.Hs.eg.db", flankDistance=1000, addFlankGeneInfo=TRUE, verbose=FALSE)
+```
+
+```{r annots_peak_freqs}
+df_annot_peaks <- as_tibble(annots_atac_peaks) %>%
+  mutate(n_samples_detecting=rowSums(mat_peak_sample)[name]) %>%
+  mutate(annotation_simple=case_when(
+    str_detect(annotation, "exon") ~ "Exon",
+    str_detect(annotation, "intron 1 of") ~ "Intron (first)",
+    str_detect(annotation, "intron") ~ "Intron (other)",
+    .default=annotation)) %>%
+  mutate(annot_fct=fct(annotation_simple, levels=c("Promoter", "5' UTR", "Exon", 
+                                                   "Intron (first)", "Intron (other)", "3' UTR",
+                                                   "Downstream (<=300bp)", "Distal Intergenic")),
+         n_samples_fct=fct(case_when(
+           n_samples_detecting == 0 ~ "None",
+           n_samples_detecting == max(n_samples_detecting) ~ "All",
+           n_samples_detecting <= 4 ~ "Few [1-4]",
+           n_samples_detecting > 4 ~ "Many [5+]"),
+           levels=c("None", "Few [1-4]", "Many [5+]", "All")))
+
+df_annot_peaks %>%
+  count(n_samples_fct, annot_fct) %>%
+  pivot_wider(names_from="annot_fct", values_from="n")
+
+df_annot_peaks %>%
+  count(n_samples_fct, annot_fct) %>%
+  pivot_wider(names_from="annot_fct", values_from="n") %>%
+  rowwise() %>%
+  mutate(across(where(is.numeric), ~ .x / sum(c_across(where(is.numeric))))) %>%
+  ungroup()
+```
+
+
+# Analysis
+
+## Seqlets
+
+```{r plt_bar_seqlets, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=n_seqlets, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), breaks=c(0,5e4,10e4,15e4,20e4,25e4), labels=c("0", "50K", "100K", "150K", "200K", "250K")) +
+  labs(x=NULL, y="Seqlets")
+```
+
+
+## Peaks with Seqlets
+
+```{r plt_bar_peaks_seqlet, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,5e4,10e4,15e4), labels=c("0", "50K", "100K", "150K")) +
+  labs(x=NULL, y="Peaks with Seqlets")
+```
+
+## Fraction of Peaks with Seqlets
+
+```{r plt_bar_frac_seqlets, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=frac_seqlet_peak, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), limits=c(0,1)) +
+  labs(x=NULL, y="Peak Fraction with Seqlets")
+```
+
+## Seqlets versus Peaks
+
+```{r plt_scatter_peaks_seqlet, fig.width=6, fig.height=4}
+df_seqlet_peaks %>%
+  ggplot(aes(x=n_seqlets, y=n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_point(size=4, pch=21)  +
+  scale_fill_manual(values=COLS_PCW) +
+  scale_x_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  scale_y_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  labs(x="Seqlets", y="Peaks with Seqlets", fill=NULL)
+```
+
+
+### Fraction of Peaks
+```{r plt_scatter_fpeaks_seqlet, fig.width=6, fig.height=4}
+df_seqlet_peaks %>%
+  ggplot(aes(x=n_seqlets, y=frac_seqlet_peak, fill=sample_id_fct)) +
+  geom_point(size=4, pch=21)  +
+  scale_fill_manual(values=COLS_PCW) +
+  scale_x_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  labs(x="Seqlets", y="Peak Fraction with Seqlets", fill=NULL)
+```
+
+
+## Is there a significant trend?
+### Number of seqlets?
+
+```{r test_num_seqlets}
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=df_seqlet_peaks$n_seqlets,
+         method='spearman')
+```
+
+Yes, significantly more seqlets are found in later weeks.
+
+### Number of peaks with seqlets?
+
+```{r test_num_peaks}
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=df_seqlet_peaks$n_seqlet_peaks,
+         method='spearman')
+```
+
+Yes, there is a significant trend toward increasing number of peaks with seqlets.
+
+### Are there more seqlets than predicted by peaks?
+For this we will do a simple regression of seqlets by seqlet peaks. Then we can check if there is still a trend in the residuals.
+
+
+```{r test_resid_peaks, fig.width=4, fig.height=3}
+model_peaks_seqs <- lm(n_seqlets ~ n_seqlet_peaks, data=df_seqlet_peaks)
+
+df_seqlet_peaks %>%
+  mutate(residual_seqlets=resid(model_peaks_seqs)) %>%
+  ggplot(aes(x=sample_id_fct, y=residual_seqlets, fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  geom_hline(yintercept=0, color="black", linetype='dashed') +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  labs(x=NULL, y="Residual Seqlets")
+
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=resid(model_peaks_seqs),
+         method='spearman')
+```
+
+Indeed, not only are there more seqlets and peaks with developmental time, but there is also an increasing density of seqlets in peaks.
+
+```{r test_peaks_seq_ratio, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=-1 + n_seqlets/n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), labels=function (x) x+1) +
+  labs(x=NULL, y="Seqlets per Peak")
+
+df_seqlet_peaks %$%
+  cor.test(x=as.integer(sample_id_fct),
+           y=n_seqlets/n_seqlet_peaks,
+           method='spearman')
+```
+
+## Number of Samples Detecting Seqlet in Peak
+```{r plt_hist_samples_per_peak, fig.width=4, fig.height=2}
+df_annot_peaks %>%
+  ggplot(aes(x=n_samples_detecting)) +
+  geom_histogram(binwidth=1, fill='grey', color='black') +
+  scale_x_continuous(expand=c(0.01,0,0.01,0), breaks=seq(0,14)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), breaks=c(0,2.5e4,5e4,7.5e4,1e5),
+                     labels=c("0", "25K", "50K", "75K", "100K")) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Peaks")
+```
+
+### Annots by Samples per Peak
+```{r plt_hist_samples_per_peak_annots, fig.width=7, fig.height=4}
+df_annot_peaks %>%
+  ggplot(aes(x=fct_inseq(as.character(n_samples_detecting)), fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,2.5e4,5e4,7.5e4,1e5),
+                     labels=c("0", "25K", "50K", "75K", "100K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  filter(n_samples_detecting > 0, n_samples_detecting < max(n_samples_detecting)) %>%
+  ggplot(aes(x=fct_inseq(as.character(n_samples_detecting)), fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,5e3,10e3,15e3),
+                     labels=c("0", "5K", "10K", "15K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  ggplot(aes(x=fct_inseq(as.character(n_samples_detecting)), fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+
+### Coarse Frequencies
+```{r plt_hist_samples_per_peak_annots_coarse, fig.width=4, fig.height=4}
+df_annot_peaks %>%
+  ggplot(aes(x=n_samples_fct, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_x_discrete(guide=guide_axis(angle=45)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,2.5e4,5e4,7.5e4,1e5),
+                     labels=c("0", "25K", "50K", "75K", "100K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Peaks", fill="Genomic\nRegion")
+
+df_annot_peaks %>%
+  ggplot(aes(x=n_samples_fct, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_x_discrete(guide=guide_axis(angle=45)) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Number of PCWs Detecting Seqlet in Peak", y="Fraction of Peaks", fill="Genomic\nRegion")
+```
+
+### Binary Frequencies
+```{r plt_hist_samples_per_peak_annots_binary, fig.width=3.5, fig.height=4}
+df_annot_peaks %>%
+  mutate(has_seqlet=ifelse(n_samples_detecting > 0, "yes", "no")) %>%
+  ggplot(aes(x=has_seqlet, fill=annot_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,5e4,1e5,1.5e5,2e5),
+                     labels=c("0", "50K", "100K", "150K", "200K")) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Motif Detected", y="Peaks", fill="Genomic\nRegion")
+
+ggsave("figures/fig5a-tf-peak-annots-fine-cts.pdf")
+
+df_annot_peaks %>%
+  mutate(has_seqlet=ifelse(n_samples_detecting > 0, "yes", "no")) %>%
+  ggplot(aes(x=has_seqlet, fill=annot_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="H", labels=label_wrap(20), begin=0.1,end=0.9) +
+  labs(x="Motif Detected", y="Fraction of Peaks", fill="Genomic\nRegion")
+
+ggsave("figures/fig5a-tf-peak-annots-fine-frac.pdf")
+```
+
+
+### Binary Frequencies, Broad Groups
+```{r plt_hist_samples_per_peak_annots_binary_coarse, fig.width=3.5, fig.height=4}
+annot2broad <- c(
+  "Promoter"="Promoter",
+  "5' UTR"="Exon",
+  "Exon"="Exon",
+  "Intron (first)"="Intron",
+  "Intron (other)"="Intron",
+  "3' UTR"="Exon",
+  "Downstream (<=300bp)"="Intergenic",
+  "Distal Intergenic"="Intergenic"
+)
+
+broad_fct <- rev(c("Promoter", "Exon", "Intron", "Intergenic"))
+
+df_annot_peaks %>%
+  mutate(has_seqlet=ifelse(n_samples_detecting > 0, "yes", "no"),
+         broad_fct=fct(annot2broad[annotation_simple], levels=broad_fct)) %>%
+  ggplot(aes(x=has_seqlet, fill=broad_fct)) +
+  geom_bar(color='black') +
+  scale_y_continuous(expand=c(0,0,0.05,0), breaks=c(0,5e4,1e5,1.5e5,2e5),
+                     labels=c("0", "50K", "100K", "150K", "200K")) +
+  scale_fill_viridis_d(option="G", labels=label_wrap(20), begin=0.2,end=0.9) +
+  labs(x="Motif Detected", y="Peaks", fill="Genomic\nRegion")
+
+ggsave("figures/fig5a-tf-peak-annots-coarse-cts.pdf")
+
+df_annot_peaks %>%
+  mutate(has_seqlet=ifelse(n_samples_detecting > 0, "yes", "no"),
+         broad_fct=fct(annot2broad[annotation_simple], levels=broad_fct)) %>%
+  ggplot(aes(x=has_seqlet, fill=broad_fct)) +
+  geom_bar(color='black', position='fill') +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  scale_fill_viridis_d(option="G", labels=label_wrap(20), begin=0.2,end=0.9) +
+  labs(x="Motif Detected", y="Fraction of Peaks", fill="Genomic\nRegion")
+
+ggsave("figures/fig5a-tf-peak-annots-coarse-frac.pdf")
+```
+
+
+
+## Peaks versus Samples
+
+```{r plt_heat_peak_detect, fig.width=3, fig.height=8}
+mat_subset <- mat_peak_sample %>%
+  { .[rowSums(.) > 0,] } %>%
+  { .[rowSums(.) < 14,] } %>%
+  { .[sample(nrow(.), size=2000),] } %>%
+  { .[order(. %*% matrix(seq(14)-7, ncol=1), decreasing=TRUE),] }
+
+mat_subset %>%
+  pheatmap(cluster_cols=FALSE, cluster_rows=FALSE, show_rownames=FALSE,
+           color=colorRampPalette(c("white", "steelblue3"))(100))
+
+mat_subset %>%
+  pheatmap(cluster_cols=TRUE, cluster_rows=FALSE, show_rownames=FALSE,
+           clustering_distance_cols="binary",
+           color=colorRampPalette(c("white", "steelblue3"))(100))
+```
+
+```{r heat_nuniq_seqlets, fig.width=5, fig.height=4}
+pheatmap(mat_nuniqseqlets, cluster_rows=FALSE, cluster_cols=FALSE)
+```
+
+
+```{r heat_nuniq_seqlets_clust, fig.width=5.6, fig.height=4}
+pheatmap(mat_nuniqseqlets, cluster_rows=TRUE, cluster_cols=FALSE)
+```
+
+```{r heatmap_frac_uniq, fig.width=4.8, fig.height=4}
+df_seqlet_peaks %>% select(sample_id, n_seqlets) %>% deframe %>%
+  `[`(rownames(mat_nuniqseqlets)) %>%
+  { mat_nuniqseqlets/. } %>%
+  pheatmap(cluster_rows=FALSE, cluster_cols=FALSE)
+```
+
+
+```{r heatmap_frac_uniq_clust, fig.width=5.4, fig.height=4}
+df_seqlet_peaks %>% select(sample_id, n_seqlets) %>% deframe %>%
+  `[`(rownames(mat_nuniqseqlets)) %>%
+  { mat_nuniqseqlets/. } %>%
+  pheatmap(cluster_rows=TRUE, cluster_cols=FALSE)
+```
+
+
+# Fraction of Seqlets over Development
+```{r compute_frac_seqlets}
+ls_seqlets <- df_seqlet_peaks %>%
+  select(sample_id, gr_seqlets) %>%
+  deframe
+
+df_frac_time <- bplapply(ls_seqlets, function (gr) {
+    gr %>%
+      mutate(group_id=str_c(pattern_type, pattern_idx, top_tf, sep="_")) %>%
+      split(.$group_id) %>%
+      outer(ls_seqlets, FUN=Vectorize(function (X,Y) {
+        mean(count_overlaps(X, Y) > 0)
+      })) %>%
+    as_tibble(rownames="group_id")
+}) %>%
+  list_rbind(names_to="sample_id") %>%
+  pivot_longer(starts_with("HSC_PCW"), names_to="query_sample", values_to="frac_seqlets") %>%
+  mutate(pcw=as.integer(str_extract(query_sample, "[0-9]+$")))
+```
+
+
+## Plot Seqlets over Time
+```{r fig.width=6, fig.height=20}
+df_frac_time %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         tf_name=str_extract(group_id, "[^_]+$")) %>%
+  ggplot(aes(x=pcw, y=frac_seqlets, group=group_id, color=tf_name)) +
+  geom_line() +
+  facet_grid(rows=vars(sample_id_fct)) +
+  ylim(c(0,1)) +
+  scale_color_grey(guide='none')
+```
+
+## Table of Average Fractions
+```{r tbl_avg_frac_seq}
+df_frac_time %>% 
+  group_by(sample_id, group_id) %>% 
+  summarise(mean_frac=mean(frac_seqlets), 
+            median_frac=median(frac_seqlets), .groups='drop') %>% 
+  arrange(mean_frac)
+```
+
+## Plot Top TFFs over Time
+```{r plt_top_seqs_frac_time, fig.width=6, fig.height=20}
+TF_SELECT=c("MEF2D", "HXA9", "TAL1", "BACH1", "NFKB1", "CEBPD")
+
+df_frac_time %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         tf_name=str_extract(group_id, "[^_]+$")) %>%
+  filter(tf_name %in% TF_SELECT) %>%
+  ggplot(aes(x=pcw, y=frac_seqlets, group=group_id, color=tf_name)) +
+  geom_line() +
+  facet_grid(rows=vars(sample_id_fct)) +
+  ylim(c(0,1)) +
+  scale_color_viridis_d(guide=guide_legend(position='top'), option="H") +
+  labs(x="PCW", y="Fraction TF footprints detected", color="TF")
+```
+
+```{r}
+get_tf_frac_df <- function (ls_seq, regex) {
+  gr_tf <- lapply(ls_seq, function (gr) {
+    filter(gr, str_detect(top_tf, regex))
+  }) %>%
+    as("GRangesList") %>% unlist %>%
+    reduce_ranges
+  n_seqlet_regions_total <- length(gr_tf)
+  df_overlaps <- lapply(ls_seq, function (gr) {
+    tibble(n_seqlet_regions=length(filter_by_overlaps(gr_tf, gr, minoverlap=25L)),
+           n_seqlet_regions_total=n_seqlet_regions_total)
+  }) %>%
+    list_rbind(names_to="sample_id") %>%
+    mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+           pcw=as.integer(str_extract(sample_id, "[0-9]+$")),
+           frac_seqlet_regions=n_seqlet_regions/n_seqlet_regions_total)
+  res <- cor.test(df_overlaps$pcw, df_overlaps$frac_seqlet_regions,
+                  method='spearman')
+  df_overlaps %>%
+    mutate(rho_sp=res$estimate, p_value=res$p.value, S_statistic=res$statistic)
+}
+
+plot_tff_overlap_n <- function (df_tf, tf_name) {
+  df_tf %>%
+    ggplot(aes(x=sample_id_fct, y=n_seqlet_regions,
+               fill=sample_id_fct)) +
+    geom_col(color='black', linewidth=0.3) +
+    scale_fill_manual(values=COLS_PCW, guide='none') +
+    scale_x_discrete(guide=guide_axis(angle=90)) +
+    scale_y_continuous(expand=c(0,0,0.1,0), limits=c(0,NA)) +
+    labs(x=NULL, y="Seqlets detected", title=tf_name)
+}
+
+plot_tff_overlap_frac <- function (df_tf, tf_name) {
+  df_tf %>%
+    ggplot(aes(x=sample_id_fct, y=frac_seqlet_regions,
+               fill=sample_id_fct)) +
+    geom_col(color='black', linewidth=0.3) +
+    scale_fill_manual(values=COLS_PCW, guide='none') +
+    scale_x_discrete(guide=guide_axis(angle=90)) +
+    scale_y_continuous(limits=c(0, 1)) +
+    labs(x=NULL, y="Fraction seqlets detected", title=tf_name)
+}
+```
+
+
+## CTCF
+```{r plt_ctcf, fig.width=4, fig.height=3}
+TF_NAME="CTCF"
+TF_REGEX="^CTCF"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## BACH1
+```{r plt_bach1, fig.width=4, fig.height=3}
+TF_NAME="BACH1"
+TF_REGEX="^BACH1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## TAL1
+```{r plt_tal1, fig.width=4, fig.height=3}
+TF_NAME="TAL1"
+TF_REGEX="^TAL1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## HOXA9
+```{r plt_hxa9, fig.width=4, fig.height=3}
+TF_NAME="HOXA9"
+TF_REGEX="^HXA9$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## MEF2D
+```{r plt_mef2d, fig.width=4, fig.height=3}
+TF_NAME="MEF2D"
+TF_REGEX="^MEF2D$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## MEF2A
+```{r plt_mef2a, fig.width=4, fig.height=3}
+TF_NAME="MEF2A"
+TF_REGEX="^MEF2A$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## MEF2x
+```{r plt_mef2x, fig.width=4, fig.height=3}
+TF_NAME="MEF2*"
+TF_REGEX="^MEF2.$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## ZNF362
+```{r plt_znf362, fig.width=4, fig.height=3}
+TF_NAME="ZN362"
+TF_REGEX="^ZNF362$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## HSF1
+```{r plt_hsf1, fig.width=4, fig.height=3}
+TF_NAME="HSF1"
+TF_REGEX="^HSF1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## REST
+```{r plt_rest, fig.width=4, fig.height=3}
+TF_NAME="REST"
+TF_REGEX="^REST$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+
+## CEBPB
+```{r plt_cebpb, fig.width=4, fig.height=3}
+TF_NAME="CEBPB"
+TF_REGEX="^CEBPB$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## CEBPD
+```{r plt_cebpd, fig.width=4, fig.height=3}
+TF_NAME="CEBPD"
+TF_REGEX="^CEBPD$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## CEBPx
+```{r plt_cebpx, fig.width=4, fig.height=3}
+TF_NAME="CEBP*"
+TF_REGEX="^CEBP.$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## NFYA
+```{r plt_nfya, fig.width=4, fig.height=3}
+TF_NAME="NFYA"
+TF_REGEX="^NFYA$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## ETV6
+```{r plt_etv6, fig.width=4, fig.height=3}
+TF_NAME="ETV6"
+TF_REGEX="^ETV6$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## SP3
+```{r plt_sp3, fig.width=4, fig.height=3}
+TF_NAME="SP3"
+TF_REGEX="^SP3$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## NFKB1
+```{r plt_nfkb1, fig.width=4, fig.height=3}
+TF_NAME="NFKB1"
+TF_REGEX="^NFKB1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## KAISO
+```{r plt_kaiso, fig.width=4, fig.height=3}
+TF_NAME="KAISO"
+TF_REGEX="^KAISO$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## RFX1
+```{r plt_rfx1, fig.width=4, fig.height=3}
+TF_NAME="RFX1"
+TF_REGEX="^RFX1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## RFX6
+```{r plt_rfx6, fig.width=4, fig.height=3}
+TF_NAME="RFX6"
+TF_REGEX="^RFX6$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## RFXx
+```{r plt_rfxx, fig.width=4, fig.height=3}
+TF_NAME="RFX*"
+TF_REGEX="^RFX.*$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## RUNX3
+```{r plt_runx3, fig.width=4, fig.height=3}
+TF_NAME="RUNX3"
+TF_REGEX="^RUNX3$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## NRF1
+```{r plt_nrf1, fig.width=4, fig.height=3}
+TF_NAME="NRF1"
+TF_REGEX="^NRF1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+## ATF1
+```{r plt_atf1, fig.width=4, fig.height=3}
+TF_NAME="ATF1"
+TF_REGEX="^ATF1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+## ETS1
+```{r plt_ets1, fig.width=4, fig.height=3}
+TF_NAME="ETS1"
+TF_REGEX="^ETS1$"
+
+df_tbl <- get_tf_frac_df(ls_seqlets, TF_REGEX)
+plot_tff_overlap_n(df_tbl, TF_NAME)
+plot_tff_overlap_frac(df_tbl, TF_NAME)
+
+df_tbl
+```
+
+
+
+# Conclusions
+
+
+
+
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

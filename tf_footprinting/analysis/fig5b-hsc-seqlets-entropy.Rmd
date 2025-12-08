@@ -1,0 +1,629 @@
+---
+title: "Compare HSC Seqlets over Development"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+Here we compare seqlets called in different PCWs, but derived from the same initial peak set ("unified").
+
+In particular, we are interested to know if the models trained on week-specific data have differential seqlet inference. In this analysis we will analyze the diversity of seqlets per week.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(scales)
+library(GenomicFeatures)
+library(GenomicRanges)
+library(ChIPseeker)
+library(plyranges)
+library(rtracklayer)
+library(pheatmap)
+library(BiocParallel)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20250709)
+BiocParallel::register(MulticoreParam(8L))
+
+OUTPUT_FIG_SEQS_DETECTED="figures/fig5b-hsc-pcw-tf-footprints-detected.pdf"
+OUTPUT_FIG_PEAKS_W_SEQS="figures/fig5b-hsc-pcw-peaks-w-tf-footprints-detected.pdf"
+OUTPUT_FIG_FRAC_PEAKS_W_SEQS="figures/fig5b-hsc-pcw-frac-peaks-w-tf-footprints-detected.pdf"
+OUTPUT_FIG_SEQS_PER_PEAK="figures/fig5b-hsc-pcw-tf-footprints-per-peak.pdf"
+OUTPUT_FIG_PEAKS_W_HETERO_SEQS="figures/fig5b-hsc-pcw-peaks-w-hetero-tf-footprints.pdf"
+
+CSV_FRAGS="/work/aaa/projects/chrombpnet-devmult/scratch/frags/hsc_pcw_fragcts.csv"
+
+BED_PEAKS="/work/aaa/projects/chrombpnet-devmult/pipeline/resources/peaks/unified/HSC.unified.bed"
+
+BEDPE_SEQLETS=c(
+  "HSC_PCW5"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW5/mean/modisco/HSC_PCW5_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW6"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW6/mean/modisco/HSC_PCW6_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW7"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW7/mean/modisco/HSC_PCW7_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW8"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW8/mean/modisco/HSC_PCW8_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW9"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW9/mean/modisco/HSC_PCW9_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW10"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW10/mean/modisco/HSC_PCW10_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW11"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW11/mean/modisco/HSC_PCW11_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW12"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW12/mean/modisco/HSC_PCW12_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW13"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW13/mean/modisco/HSC_PCW13_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW14"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW14/mean/modisco/HSC_PCW14_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW15"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW15/mean/modisco/HSC_PCW15_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW16"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW16/mean/modisco/HSC_PCW16_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW17"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW17/mean/modisco/HSC_PCW17_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW18"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW18/mean/modisco/HSC_PCW18_mean.counts_scores.top_tf.bedpe.gz"
+)
+
+TXDB_FILE="/work/DevM_analysis/data/refdata-cellranger-arc-GRCh38-2020-A-2.0.0_genes/cellranger-2020-A-2.0.0.txdb"
+
+COLS_PCW=c(
+  "HSC_PCW5"="#FFBF00",
+  "HSC_PCW6"="#ff986d",
+  "HSC_PCW7"="#ff8782",
+  "HSC_PCW8"="#ff7b9b",
+  "HSC_PCW9"="#f176b4",
+  "HSC_PCW10"="#d97fce",
+  "HSC_PCW11"="#b989e2",
+  "HSC_PCW12"="#9094ed",
+  "HSC_PCW13"="#60a4f2",
+  "HSC_PCW14"="#32b1eb",
+  "HSC_PCW15"="#29badb",
+  "HSC_PCW16"="#4bc0c8",
+  "HSC_PCW17"="#8dd7db",
+  "HSC_PCW18"="#c0dedf")
+
+theme_set(theme_bw())
+```
+
+## Functions
+
+```{r methods}
+read_bedpe_tff <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf", "score", "strand", "tff_id"),
+           col_types="cii___cdc__c") %>%
+    mutate(pattern_type=str_extract(tff_id, "^[^_]+"),
+           pattern_idx=as.integer(str_extract(tff_id, "(neg|pos)_patterns\\.pattern_([0-9]+)", group=2))) %>%
+    as_granges() %>%
+    unique()
+}
+
+read_bedpe_target <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf", "tff_id"),
+           col_types="___ciic____c") %>%
+    as_granges() %>%
+    filter(!duplicated(as_tibble(.)))
+}
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+gr_atac_peaks <- read_narrowpeaks(BED_PEAKS)
+
+df_frags <- read_csv(CSV_FRAGS) %>%
+  mutate(sample_id=fct(sample_id, levels=names(COLS_PCW)))
+
+df_seqlet_peaks <- enframe(BEDPE_SEQLETS, name="sample_id", value="file") %>%
+  mutate(gr_seqlet_peaks=map(file, read_bedpe_target),
+         gr_seqlets=map(file, read_bedpe_tff)) %>%
+  select(sample_id, gr_seqlet_peaks, gr_seqlets)
+
+txdb <- loadDb(TXDB_FILE)
+```
+
+## Preprocessing
+```{r prepare_data}
+gr_all <- Reduce(intersect, df_seqlet_peaks$gr_seqlet_peaks)
+
+gr_any <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>% reduce
+  
+df_seqlet_peaks %<>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_unified=length(gr_atac_peaks),
+         n_seqlet_peaks=map_int(gr_seqlet_peaks, function (gr) { length(unique(gr)) }),
+         n_seqlets=map_int(gr_seqlets, length)) %>%
+  mutate(frac_seqlet_peak=n_seqlet_peaks/n_unified) %>%
+  left_join(df_frags, by="sample_id")
+```
+
+
+# Analysis
+
+## Seqlets
+
+```{r plt_bar_seqlets, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=n_seqlets, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), breaks=c(0,5e4,10e4,15e4,20e4,25e4), labels=c("0", "50K", "100K", "150K", "200K", "250K")) +
+  labs(x=NULL, y="Seqlets")
+```
+
+```{r plt_line_seqs, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=n_seqlets)) +
+  #geom_line() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  geom_point() +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  labs(x="PCW", y="Seqlets Detected")
+
+ggsave(OUTPUT_FIG_SEQS_DETECTED)
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlets ~ pcw) %>%
+  summary()
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlets ~ n_frags + pcw) %>%
+  summary()
+```
+
+## Peaks with Seqlets
+
+```{r plt_bar_peaks_seqlet, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), 
+                     breaks=c(0,5e4,10e4,15e4), 
+                     labels=c("0", "50K", "100K", "150K")) +
+  labs(x=NULL, y="Peaks with Seqlets")
+```
+
+```{r plt_line_peaks, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=n_seqlet_peaks)) +
+  #geom_line() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  geom_point() +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  labs(x="PCW", y="Peaks with seqlets detected")
+
+ggsave(OUTPUT_FIG_PEAKS_W_SEQS)
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlet_peaks ~ pcw) %>%
+  summary()
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlet_peaks ~ n_frags + pcw) %>%
+  summary()
+```
+
+## Fraction of Peaks with Seqlets
+
+```{r plt_bar_frac_seqlets, fig.width=5, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=frac_seqlet_peak, fill=sample_id_fct)) +
+  geom_bar(stat='identity', color='black', linewidth=0.2)  +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), limits=c(0,1)) +
+  labs(x=NULL, y="Peak Fraction with Seqlets")
+```
+
+```{r plt_line_frac_peaks, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=frac_seqlet_peak)) +
+  #geom_line() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  geom_point() +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  labs(x="PCW", y="Peak fraction with seqlets")
+
+ggsave(OUTPUT_FIG_FRAC_PEAKS_W_SEQS)
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= frac_seqlet_peak ~ pcw) %>%
+  summary()
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= frac_seqlet_peak ~ n_frags + pcw) %>%
+  summary()
+```
+
+## Seqlets versus Peaks
+
+```{r plt_scatter_peaks_seqlet, fig.width=6, fig.height=4}
+df_seqlet_peaks %>%
+  ggplot(aes(x=n_seqlets, y=n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_point(size=4, pch=21)  +
+  scale_fill_manual(values=COLS_PCW) +
+  scale_x_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  scale_y_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  labs(x="Seqlets", y="Peaks with Seqlets", fill=NULL)
+```
+
+
+### Fraction of Peaks
+```{r plt_scatter_fpeaks_seqlet, fig.width=6, fig.height=4}
+df_seqlet_peaks %>%
+  ggplot(aes(x=n_seqlets, y=frac_seqlet_peak, fill=sample_id_fct)) +
+  geom_point(size=4, pch=21)  +
+  scale_fill_manual(values=COLS_PCW) +
+  scale_x_continuous(labels=label_number(scale_cut=cut_short_scale())) +
+  labs(x="Seqlets", y="Peak Fraction with Seqlets", fill=NULL)
+```
+
+
+## Is there a significant trend?
+### Number of seqlets?
+
+```{r test_num_seqlets}
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=df_seqlet_peaks$n_seqlets,
+         method='spearman')
+```
+
+Yes, significantly more seqlets are found in later weeks.
+
+### Number of peaks with seqlets?
+
+```{r test_num_peaks}
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=df_seqlet_peaks$n_seqlet_peaks,
+         method='spearman')
+```
+
+Yes, there is a significant trend toward increasing number of peaks with seqlets.
+
+### Are there more seqlets than predicted by peaks?
+For this we will do a simple regression of seqlets by seqlet peaks. Then we can check if there is still a trend in the residuals.
+
+
+```{r test_resid_peaks, fig.width=4, fig.height=3}
+model_peaks_seqs <- lm(n_seqlets ~ n_seqlet_peaks, data=df_seqlet_peaks)
+
+df_seqlet_peaks %>%
+  mutate(residual_seqlets=resid(model_peaks_seqs)) %>%
+  ggplot(aes(x=sample_id_fct, y=residual_seqlets, fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  geom_hline(yintercept=0, color="black", linetype='dashed') +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  labs(x=NULL, y="Residual Seqlets")
+
+cor.test(x=as.integer(df_seqlet_peaks$sample_id_fct),
+         y=resid(model_peaks_seqs),
+         method='spearman')
+```
+
+Indeed, not only are there more seqlets and peaks with developmental time, but there is also an increasing density of seqlets in peaks.
+
+```{r test_peaks_seq_ratio, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  ggplot(aes(x=sample_id_fct, y=-1 + n_seqlets/n_seqlet_peaks, fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.05,0), labels=function (x) x+1) +
+  labs(x=NULL, y="Seqlets per Peak")
+
+df_seqlet_peaks %$%
+  cor.test(x=as.integer(sample_id_fct),
+           y=n_seqlets/n_seqlet_peaks,
+           method='spearman')
+```
+
+
+```{r plt_line_seqs_per_peak, fig.width=4, fig.height=3}
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=n_seqlets/n_seqlet_peaks)) +
+  #geom_line() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  geom_point() +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  labs(x="PCW", y="Seqlets per peak")
+
+ggsave(OUTPUT_FIG_SEQS_PER_PEAK)
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlets/n_seqlet_peaks ~ pcw) %>%
+  summary()
+
+df_seqlet_peaks %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_seqlets/n_seqlet_peaks ~ n_frags + pcw) %>%
+  summary()
+```
+
+# Fraction of Seqlets over Development
+```{r compute_frac_seqlets}
+ls_seqlets <- df_seqlet_peaks %>%
+  select(sample_id, gr_seqlets) %>%
+  deframe
+```
+
+```{r effective_tfs}
+df_effective_tfs <- ls_seqlets %>%
+  sapply(function (gr) {
+    cts <- table(gr$top_tf)
+    probs <- cts/sum(cts)
+    tff_entropy <- -sum(probs*log2(probs))
+    eff_tffs <- 2^tff_entropy
+    eff_tffs
+  }) %>%
+  enframe(name="sample_id", value="effective_tfs") %>%
+    mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+           pcw=as.integer(str_extract(sample_id, "[0-9]+$")))
+
+df_effective_patterns <- ls_seqlets %>%
+  sapply(function (gr) {
+    cts <- table(str_c(gr$pattern_type, gr$pattern_idx))
+    probs <- cts/sum(cts)
+    tff_entropy <- -sum(probs*log2(probs))
+    eff_tffs <- 2^tff_entropy
+    eff_tffs
+  }) %>%
+  enframe(name="sample_id", value="effective_patterns") %>%
+    mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+           pcw=as.integer(str_extract(sample_id, "[0-9]+$")))
+```
+
+
+## Effective TFs and TF Patterns
+```{r plt_effective_tfs, fig.width=4, fig.height=3}
+df_effective_tfs %>%
+  ggplot(aes(x=sample_id_fct, y=effective_tfs,
+             fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), limits=c(0,NA)) +
+  labs(x=NULL, y="Effective TFs (Diversity)")
+
+df_effective_patterns %>%
+  ggplot(aes(x=sample_id_fct, y=effective_patterns,
+             fill=sample_id_fct)) +
+  geom_col(color='black', linewidth=0.3) +
+  scale_fill_manual(values=COLS_PCW, guide='none') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), limits=c(0,NA)) +
+  labs(x=NULL, y="Effective TF Patterns")
+```
+
+### Statistical Tests
+```{r test_effective_tfs, fig.width=4, fig.height=3}
+df_effective_tfs %$%
+  cor.test(x=as.integer(sample_id_fct),
+           y=effective_tfs,
+           method='spearman')
+
+df_effective_patterns %$%
+  cor.test(x=as.integer(sample_id_fct),
+           y=effective_patterns,
+           method='spearman')
+```
+
+
+# Heterogeneity of Seqlets
+```{r}
+count_tfs_per_peak <- function (gr) {
+  gr %>%
+  as_tibble() %>%
+  group_by(seqnames, start, end) %>%
+  summarize(n_seqlets=dplyr::n(),
+            n_tfs=length(unique(top_tf)),
+            .groups='drop') %>%
+  count(n_tfs, name="n_peaks")
+}
+
+df_tfs_per_peak <- df_seqlet_peaks %>%
+  select(sample_id, gr_seqlet_peaks) %>%
+  group_by(sample_id) %>%
+  summarize(res=map(gr_seqlet_peaks, count_tfs_per_peak)) %>%
+  unnest(res)
+```
+
+```{r plt_tfs_per_peak, fig.width=5, fig.height=3}
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 3, "3+", as.character(n_tfs)),
+                       levels=c("1", "2", "3+"))) %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks, fill=fct_rev(n_tfs_fct))) +
+  geom_bar(stat='identity', position='stack') +
+  scale_fill_viridis_d(option="A", begin=0.2, end=0.8, direction=-1) +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Peaks", fill="TFs per\nPeak")
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 3, "3+", as.character(n_tfs)),
+                       levels=c("1", "2", "3+"))) %>%
+  filter(n_tfs > 1) %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks, fill=fct_rev(n_tfs_fct))) +
+  geom_bar(stat='identity', position='stack') +
+  scale_fill_viridis_d(option="A", begin=0.2, end=0.8, direction=-1) +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Peaks", fill="TFs per\nPeak")
+
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 3, "3+", as.character(n_tfs)),
+                       levels=c("1", "2", "3+"))) %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks, fill=fct_rev(n_tfs_fct))) +
+  geom_bar(stat='identity', position='fill') +
+  scale_fill_viridis_d(option="A", begin=0.2, end=0.8, direction=-1) +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  labs(x=NULL, y="Peaks", fill="TFs per\nPeak")
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks, fill=fct_rev(n_tfs_fct))) +
+  geom_bar(stat='identity', position='stack') +
+  scale_fill_viridis_d(option="A", begin=0.2, end=0.5, direction=-1) +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Peaks", fill="TFs per\nPeak")
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks, fill=fct_rev(n_tfs_fct))) +
+  geom_bar(stat='identity', position='fill') +
+  scale_fill_viridis_d(option="A", begin=0.2, end=0.5, direction=-1) +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0,0)) +
+  labs(x=NULL, y="Peaks", fill="TFs per\nPeak")
+```
+
+```{r plt_multi_tf_peaks, fig.width=4, fig.height=3}
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  filter(n_tfs > 1) %>%
+  group_by(sample_id_fct) %>%
+  summarize(n_peaks=sum(n_peaks), .groups='drop') %>%
+  ggplot(aes(x=sample_id_fct, y=n_peaks)) +
+  geom_bar(stat='identity', position='stack', fill='grey80', color='black') +
+  scale_x_discrete(guide=guide_axis(angle=90)) +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Peaks with multiple TFs", fill=NULL)
+
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  filter(n_tfs > 1) %>%
+  group_by(sample_id_fct) %>%
+  summarize(n_peaks=sum(n_peaks), .groups='drop') %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=n_peaks)) +
+  #geom_line() +
+  geom_point() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  scale_y_continuous(expand=c(0,0,0.1,0), limits=c(0,NA)) +
+  labs(x="PCW", y="Peaks with heterogenous TFs")
+
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  filter(n_tfs > 1) %>%
+  group_by(sample_id_fct) %>%
+  summarize(n_peaks=sum(n_peaks), .groups='drop') %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  ggplot(aes(x=pcw, y=n_peaks)) +
+  #geom_line() +
+  geom_point() +
+  geom_smooth(method='lm', alpha=0.2, color='orchid', fullrange=TRUE) +
+  scale_x_continuous(breaks=seq(5,18), minor_breaks=NULL, expand=c(0,0), limits=c(4.5,18.5)) +
+  scale_y_continuous() +
+  labs(x="PCW", y="Peaks with heterogenous TFs")
+
+ggsave(OUTPUT_FIG_PEAKS_W_HETERO_SEQS)
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  filter(n_tfs > 1) %>%
+  group_by(sample_id_fct) %>%
+  summarize(n_peaks=sum(n_peaks), .groups='drop') %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_peaks ~ pcw) %>%
+  summary()
+
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  filter(n_tfs > 1) %>%
+  group_by(sample_id, sample_id_fct) %>%
+  summarize(n_peaks=sum(n_peaks), .groups='drop') %>%
+  left_join(df_frags, by="sample_id") %>%
+  mutate(pcw=as.numeric(str_extract(sample_id_fct, "[0-9]+$"))) %>%
+  lm(formula= n_peaks ~ n_frags + pcw) %>%
+  summary()
+```
+
+
+```{r}
+df_tfs_per_peak %>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_tfs_fct=fct(ifelse(n_tfs >= 2, "2+", as.character(n_tfs)),
+                       levels=c("1", "2+"))) %>%
+  group_by(sample_id_fct, n_tfs_fct) %>%
+  summarise(n_peaks=sum(n_peaks)) %>%
+  mutate(frac_peaks=n_peaks/sum(n_peaks)) %>%
+  ungroup() %>%
+  filter(n_tfs_fct == "2+") %$%
+  cor.test(x=as.integer(sample_id_fct),
+           y=frac_peaks,
+           method='spearman')
+```
+
+
+# Conclusions
+
+
+
+
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

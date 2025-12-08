@@ -1,0 +1,977 @@
+---
+title: "Compare HSC Seqlets over Development"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+Here we compare seqlets called in different PCWs, but derived from the same initial peak set ("unified").
+
+In particular, we are interested to know if the models trained on week-specific data have differential seqlet inference. Thus, we will look at number of seqlets called per week and test if any have bias in developmental time.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(scales)
+library(GenomicFeatures)
+library(GenomicRanges)
+library(plyranges)
+library(rtracklayer)
+library(pheatmap)
+library(BiocParallel)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(writexl)
+library(nmfbin)
+library(ComplexHeatmap)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20250709)
+BiocParallel::register(MulticoreParam(8L))
+
+## Controls the fraction of samples needed to consider a TF footprint in a peak detected for a *set* of samples
+MIN_FRAC_OFF=1/3
+MIN_FRAC_ON=2/3
+SUFFIX_THRESHOLD="33-67"
+
+XLSX_GO_RESULTS=sprintf("analysis/tables/dynamic-hsc-seqlet-peaks-target-genes-go-%s.xlsx", SUFFIX_THRESHOLD)
+
+BEDPE_GLMMPG="/work/DevM_analysis/data/E2G/glmmPG/HSC.glmmPG_FDR20.bedpe"
+
+BED_PEAKS="/work/aaa/projects/chrombpnet-devmult/pipeline/resources/peaks/unified/HSC.unified.bed"
+
+BEDPE_SEQLETS=c(
+  "HSC_PCW5"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW5/mean/modisco/HSC_PCW5_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW6"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW6/mean/modisco/HSC_PCW6_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW7"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW7/mean/modisco/HSC_PCW7_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW8"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW8/mean/modisco/HSC_PCW8_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW9"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW9/mean/modisco/HSC_PCW9_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW10"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW10/mean/modisco/HSC_PCW10_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW11"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW11/mean/modisco/HSC_PCW11_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW12"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW12/mean/modisco/HSC_PCW12_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW13"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW13/mean/modisco/HSC_PCW13_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW14"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW14/mean/modisco/HSC_PCW14_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW15"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW15/mean/modisco/HSC_PCW15_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW16"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW16/mean/modisco/HSC_PCW16_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW17"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW17/mean/modisco/HSC_PCW17_mean.counts_scores.top_tf.bedpe.gz",
+  "HSC_PCW18"="/work/aaa/projects/chrombpnet-devmult/pipeline/results/chrombpnet_nobias/hsc_unified/HSC_PCW18/mean/modisco/HSC_PCW18_mean.counts_scores.top_tf.bedpe.gz"
+)
+
+COLS_PCW=c(
+  "HSC_PCW5"="#FFBF00",
+  "HSC_PCW6"="#ff986d",
+  "HSC_PCW7"="#ff8782",
+  "HSC_PCW8"="#ff7b9b",
+  "HSC_PCW9"="#f176b4",
+  "HSC_PCW10"="#d97fce",
+  "HSC_PCW11"="#b989e2",
+  "HSC_PCW12"="#9094ed",
+  "HSC_PCW13"="#60a4f2",
+  "HSC_PCW14"="#32b1eb",
+  "HSC_PCW15"="#29badb",
+  "HSC_PCW16"="#4bc0c8",
+  "HSC_PCW17"="#8dd7db",
+  "HSC_PCW18"="#c0dedf")
+
+SCAV_COLS=colorRampPalette(c("#F9F6F4", "#F1DEDA", "#C684AA", "#6B4E80", "#4D4665"))(100)
+SCAV_COLS_REV=rev(SCAV_COLS)
+
+theme_set(theme_bw())
+```
+
+## Functions
+
+```{r methods}
+read_bedpe_tff <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf", "score", "strand", "tff_id"),
+           col_types="cii___cdc__c") %>%
+    mutate(pattern_type=str_extract(tff_id, "^[^_]+"),
+           pattern_idx=as.integer(str_extract(tff_id, "(neg|pos)_patterns\\.pattern_([0-9]+)", group=2))) %>%
+    as_granges() %>%
+    unique()
+}
+
+read_bedpe_target <- function(file) {
+  read_tsv(file, col_names=c("seqnames", "start", "end", "top_tf"),
+           col_types="___ciic_____") %>%
+    as_granges() %>%
+    filter(!duplicated(as_tibble(.)))
+}
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+gr_atac_peaks <- read_narrowpeaks(BED_PEAKS)
+
+df_seqlet_peaks <- enframe(BEDPE_SEQLETS, name="sample_id", value="file") %>%
+  mutate(gr_seqlet_peaks=map(file, read_bedpe_target),
+         gr_seqlets=map(file, read_bedpe_tff)) %>%
+  select(sample_id, gr_seqlet_peaks, gr_seqlets)
+
+gr_seqlet_peaks_tfs <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>%
+  filter(!duplicated(as_tibble(.)))
+```
+
+```{r load_pgls}
+df_glmmpg <- read_tsv(BEDPE_GLMMPG,
+                     col_names=c("chrom1", "start1", "end1",
+                                 "chrom2", "start2", "end2",
+                                 "name", "score",
+                                 "strand1", "strand2"),
+                     show_col_types=FALSE) %>%
+  mutate(target_gene=str_extract(name, "[^:]+$"))
+
+gr_enhancer <- df_glmmpg %>%
+  dplyr::rename(seqnames=chrom1, start=start1, end=end1) %>%
+  as_granges()
+```
+
+## Preprocessing
+```{r prepare_data}
+gr_all <- Reduce(intersect, df_seqlet_peaks$gr_seqlet_peaks)
+
+gr_any <- df_seqlet_peaks$gr_seqlet_peaks %>%
+  as("GRangesList") %>%
+  unlist %>% reduce
+  
+df_seqlet_peaks %<>%
+  mutate(sample_id_fct=fct(sample_id, levels=names(COLS_PCW)),
+         n_unified=length(gr_atac_peaks),
+         n_seqlet_peaks=map_int(gr_seqlet_peaks, length),
+         n_seqlets=map_int(gr_seqlets, length)) %>%
+  mutate(frac_seqlet_peak=n_seqlet_peaks/n_unified)
+
+mat_peak_sample <- lapply(df_seqlet_peaks$gr_seqlet_peaks, function (gr) {
+  countOverlaps(gr_atac_peaks, unique(gr), minoverlap=500L)
+}) %>% do.call(what=cbind) %>%
+  `rownames<-`(gr_atac_peaks$name) %>%
+  `colnames<-`(df_seqlet_peaks$sample_id)
+```
+
+
+# Analysis
+
+## Peaks versus Samples
+
+```{r plt_heat_peak_detect, fig.width=3, fig.height=8}
+hc_full <- mat_peak_sample %>%
+  { .[rowSums(.) > 0,] } %>%
+  { .[rowSums(.) < 14,] } %>%
+  t %>% dist %>% hclust %>%
+  as.dendrogram %>%
+  dendextend::rotate(order=colnames(mat_peak_sample)) %>%
+  as.hclust()
+
+mat_subset <- mat_peak_sample %>%
+  { .[rowSums(.) > 0,] } %>%
+  { .[rowSums(.) < 14,] } %>%
+  { .[sample(nrow(.), size=2000),] } %>%
+  { .[order(. %*% matrix(seq(14)-7, ncol=1), decreasing=FALSE),] }
+
+mat_subset %>%
+  pheatmap(cluster_cols=FALSE, cluster_rows=FALSE, show_rownames=FALSE,
+           color=colorRampPalette(c("white", "steelblue3"))(100))
+
+mat_subset %>%
+  pheatmap(cluster_cols=hc_full, cluster_rows=FALSE, show_rownames=FALSE,
+           cutree_cols=3,
+           color=colorRampPalette(c("white", "steelblue3"))(100))
+```
+
+# Strict No PCW5 - All Others
+```{r}
+gr_peaks_nopcw5 <- mat_peak_sample %>%
+  { .[rowSums(.) == 13,] } %>%
+  { .[.[,"HSC_PCW5"] == 0,] } %>%
+  rownames() %>%
+  GRanges()
+
+geneset_nopcw5 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_nopcw5) %>%
+  { unique(.$target_gene) }
+
+sprintf("Among the %d peaks with no seqlets in only PCW5 there are %d target genes",
+        length(gr_peaks_nopcw5), length(geneset_nopcw5))
+```
+
+
+```{r fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res <- enrichGO(gene=geneset_nopcw5, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+dotplot(res, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0))
+
+barplot(res, showCategory=10)
+```
+
+```{r fig.width=14, fig.height=12}
+emapplot(enrichplot::pairwise_termsim(res), cex.params=list(line=0.2))
+```
+
+# Negative Controls
+
+## Strict No PCW6 - All Others
+```{r control_nopcw6}
+gr_peaks_nopcw6 <- mat_peak_sample %>%
+  { .[rowSums(.) == 13,] } %>%
+  { .[.[,"HSC_PCW6"] == 0,] } %>%
+  rownames() %>%
+  GRanges()
+
+geneset_nopcw6 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_nopcw6) %>%
+  { unique(.$target_gene) }
+
+res <- enrichGO(gene=geneset_nopcw6, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont='BP', readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+
+sprintf("Among the %d potential GO BP terms involving %d target genes linked in %d peaks where no seqlets were detected only in PCW6 there were %d were significant terms (10%% FDR).",
+        nrow(res@result), length(geneset_nopcw6), length(gr_peaks_nopcw6), sum(res@result$p.adjust < 0.1))
+```
+
+
+## Strict No PCW10 - All Others
+```{r control_nopcw10}
+gr_peaks_nopcw10 <- mat_peak_sample %>%
+  { .[rowSums(.) == 13,] } %>%
+  { .[.[,"HSC_PCW10"] == 0,] } %>%
+  rownames() %>%
+  GRanges()
+
+geneset_nopcw10 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_nopcw10) %>%
+  { unique(.$target_gene) }
+
+res <- enrichGO(gene=geneset_nopcw10, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont='BP', readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+
+sprintf("Among the %d potential GO BP terms involving %d target genes linked in %d peaks where no seqlets were detected only in PCW10 there were %d were significant terms (10%% FDR).",
+        nrow(res@result), length(geneset_nopcw10), length(gr_peaks_nopcw10), sum(res@result$p.adjust < 0.1))
+```
+
+## Strict No PCW11 - All Others
+```{r control_nopcw11}
+gr_peaks_nopcw11 <- mat_peak_sample %>%
+  { .[rowSums(.) == 13,] } %>%
+  { .[.[,"HSC_PCW11"] == 0,] } %>%
+  rownames() %>%
+  GRanges()
+
+geneset_nopcw11 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_nopcw11) %>%
+  { unique(.$target_gene) }
+
+res <- enrichGO(gene=geneset_nopcw11, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont='BP', readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+
+sprintf("Among the %d potential GO BP terms involving %d target genes linked in %d peaks where no seqlets were detected only in PCW11 there were %d were significant terms (10%% FDR).",
+        nrow(res@result), length(geneset_nopcw11), length(gr_peaks_nopcw11), sum(res@result$p.adjust < 0.1))
+```
+
+## Strict No PCW18 - All Others
+```{r control_nopcw18}
+gr_peaks_nopcw18 <- mat_peak_sample %>%
+  { .[rowSums(.) == 13,] } %>%
+  { .[.[,"HSC_PCW18"] == 0,] } %>%
+  rownames() %>%
+  GRanges()
+
+geneset_nopcw18 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_nopcw18) %>%
+  { unique(.$target_gene) }
+
+res <- enrichGO(gene=geneset_nopcw18, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont='BP', readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+
+sprintf("Among the %d potential GO BP terms involving %d target genes linked in %d peaks where no seqlets were detected only in PCW18 there were %d were significant terms (10%% FDR).",
+        nrow(res@result), length(geneset_nopcw18), length(gr_peaks_nopcw18), sum(res@result$p.adjust < 0.1))
+```
+
+# Cluster Sets
+```{r}
+IDX_EARLY="HSC_PCW5"
+IDX_MID=str_c("HSC_PCW", seq(6,10))
+IDX_LATE=str_c("HSC_PCW", seq(11,18))
+
+filter_is_off <- function (mat, idx_cols, threshold=MIN_FRAC_OFF) {
+  mat[rowMeans(mat[,idx_cols, drop=FALSE]) <= MIN_FRAC_OFF,]
+}
+
+filter_is_on <- function (mat, idx_cols, threshold=MIN_FRAC_ON) {
+  mat[rowMeans(mat[,idx_cols, drop=FALSE]) >= MIN_FRAC_ON,]
+}
+
+compute_tf_enrichment <- function (gr_seqlets, gr_dynamic, alternative="greater") {
+  df_random <- gr_seqlets %>% as_tibble %>% 
+    count(top_tf, name="n_overall") %>%
+    mutate(rate_overall=n_overall/sum(n_overall))
+  
+  df_sample <- filter_by_overlaps(gr_seqlets, gr_dynamic) %>%
+    as_tibble() %>%
+    count(top_tf, name="n_dynamic") %>%
+    mutate(frac_dynamic=n_dynamic/sum(n_dynamic),
+           n_total=sum(n_dynamic))
+  
+  left_join(df_sample, df_random, by="top_tf") %>%
+    rowwise() %>%
+    mutate(
+      res=list(binom.test(n_dynamic, n_total, p=rate_overall, alternative=alternative)),
+      p_value=res$p.value,
+      statistic=res$statistic
+    ) %>%
+    select(-res) %>%
+    ungroup() %>%
+    mutate(q_value=p.adjust(p_value, method="BH"),
+           l2rc=log2(frac_dynamic/rate_overall)) %>%
+    arrange(q_value)
+}
+
+peak2target <- function (idx_peaks, gene_subset=NULL) {
+  gr_annots <- select(gr_enhancer, target_gene)
+  if (!is.null(gene_subset)) {
+    gr_annots <- filter(gr_annots, target_gene %in% gene_subset)
+  }
+  gr_annotated <- join_overlap_left(GRanges(idx_peaks), gr_annots)
+  tibble(peak_id=as.character(gr_annotated),
+         target_gene=gr_annotated$target_gene) %>%
+    mutate(target_gene=ifelse(is.na(target_gene), "", target_gene)) %>%
+    group_by(peak_id) %>%
+    summarize(target_genes=str_wrap(stringr::str_c(target_gene, collapse="|"),
+                                    whitespace_only=FALSE, width=18)) %>%
+    deframe() %>%
+    `[`(idx_peaks)
+}
+
+
+peak2tffs <- function (idx_peaks, tf_subset=NULL) {
+  gr_annots <- gr_seqlet_peaks_tfs
+  if (!is.null(tf_subset)) {
+    gr_annots <- filter(gr_annots, top_tf %in% tf_subset)
+  }
+  
+  gr_annotated <- join_overlap_left(GRanges(idx_peaks), gr_annots)
+  
+  tibble(peak_id=as.character(gr_annotated),
+         tf_footprint=gr_annotated$top_tf) %>%
+    mutate(tf_footprint=ifelse(is.na(tf_footprint), "placeholder", tf_footprint),
+           detected=TRUE) %>%
+    unique() %>%
+    pivot_wider(id_cols=peak_id, names_from=tf_footprint, values_from=detected, values_fill=FALSE) %>%
+    mutate(placeholder=NULL) %>%
+    column_to_rownames("peak_id") %>%
+    `[`(idx_peaks,,drop=FALSE)
+}
+```
+
+## Early Activating (off-on-on)
+```{r early_activating}
+idx_peaks_011 <- mat_peak_sample %>%
+  filter_is_off(IDX_EARLY) %>%
+  filter_is_on(IDX_MID) %>%
+  filter_is_on(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_011 <- GRanges(idx_peaks_011)
+
+geneset_011 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_011) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets appearing after PCW5 there are %d target genes",
+        length(gr_peaks_011), length(geneset_011))
+```
+
+### GO Analysis
+```{r go_011, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_011 <- enrichGO(gene=geneset_011, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+dotplot(res_011, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0))
+
+barplot(res_011, showCategory=10)
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+emapplot(enrichplot::pairwise_termsim(res_011), cex.params=list(line=0.2))
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_011_all}
+df_tfs_011_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_011)
+df_tfs_011_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_011_tgt}
+df_tfs_011_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_011, gr_enhancer))
+df_tfs_011_targeting
+```
+
+## Late Activating (off-off-on)
+```{r late_activating}
+idx_peaks_001 <- mat_peak_sample %>%
+  filter_is_off(IDX_EARLY) %>%
+  filter_is_off(IDX_MID) %>%
+  filter_is_on(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_001 <- GRanges(idx_peaks_001)
+
+geneset_001 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_001) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets appearing after PCW10 there are %d target genes",
+        length(gr_peaks_001), length(geneset_001))
+```
+
+### GO Analysis
+```{r go_001, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_001 <- enrichGO(gene=geneset_001, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+if (any(res_001@result$p.adjust < 0.1)) {
+  print(dotplot(res_001, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0)))
+  print(barplot(res_001, showCategory=10))
+} else {
+  print("No significant categories at 10% FDR")
+}
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+if (any(res_001@result$p.adjust <0.1)) {
+  print(emapplot(enrichplot::pairwise_termsim(res_001), cex.params=list(line=0.2)))
+} else {
+  print("No significant categories at 10% FDR")
+}
+
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_001_all}
+df_tfs_001_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_001)
+df_tfs_001_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_001_tgt}
+df_tfs_001_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_001, gr_enhancer))
+df_tfs_001_targeting
+```
+
+## Early Deactivating (on-off-off)
+```{r early_deactivating}
+idx_peaks_100 <- mat_peak_sample %>%
+  filter_is_on(IDX_EARLY) %>%
+  filter_is_off(IDX_MID) %>%
+  filter_is_off(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_100 <- GRanges(idx_peaks_100)
+
+geneset_100 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_100) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets disappearing after PCW5 there are %d target genes",
+        length(gr_peaks_100), length(geneset_100))
+```
+
+
+### GO Analysis
+```{r go_100, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_100 <- enrichGO(gene=geneset_100, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+dotplot(res_100, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0))
+
+barplot(res_100, showCategory=10)
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+emapplot(enrichplot::pairwise_termsim(res_100), cex.params=list(line=0.2))
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_100_all}
+df_tfs_100_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_100)
+df_tfs_100_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_100_tgt}
+df_tfs_100_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_100, gr_enhancer))
+df_tfs_100_targeting
+```
+
+
+## Late Deactivating (on-on-off)
+```{r late_deactivating}
+idx_peaks_110 <- mat_peak_sample %>%
+  filter_is_on(IDX_EARLY) %>%
+  filter_is_on(IDX_MID) %>%
+  filter_is_off(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_110 <- GRanges(idx_peaks_110)
+
+geneset_110 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_110) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets disappearing after PCW10 there are %d target genes",
+        length(gr_peaks_110), length(geneset_110))
+```
+
+### GO Analysis
+```{r go_110, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_110 <- enrichGO(gene=geneset_110, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+dotplot(res_110, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0))
+
+barplot(res_110, showCategory=10)
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+emapplot(enrichplot::pairwise_termsim(res_110), cex.params=list(line=0.2))
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_110_all}
+df_tfs_110_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_110)
+df_tfs_110_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_110_tgt}
+df_tfs_110_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_110, gr_enhancer))
+df_tfs_110_targeting
+```
+
+
+## Middle Activated (off-on-off)
+```{r mid_activating}
+idx_peaks_010 <- mat_peak_sample %>%
+  filter_is_off(IDX_EARLY) %>%
+  filter_is_on(IDX_MID) %>%
+  filter_is_off(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_010 <- GRanges(idx_peaks_010)
+
+geneset_010 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_010) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets appearing only during PCWs 6-10 there are %d target genes",
+        length(gr_peaks_010), length(geneset_010))
+```
+
+
+### GO Analysis
+```{r go_010, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_010 <- enrichGO(gene=geneset_010, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+dotplot(res_010, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0))
+
+barplot(res_010, showCategory=10)
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+emapplot(enrichplot::pairwise_termsim(res_010), cex.params=list(line=0.2))
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_010_all}
+df_tfs_010_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_010)
+df_tfs_010_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_010_tgt}
+df_tfs_010_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_010, gr_enhancer))
+df_tfs_010_targeting
+```
+
+
+## Middle Deactivated (on-off-on)
+```{r mid_deactivating}
+idx_peaks_101 <- mat_peak_sample %>%
+  filter_is_on(IDX_EARLY) %>%
+  filter_is_off(IDX_MID) %>%
+  filter_is_on(IDX_LATE) %>%
+  rownames()
+
+gr_peaks_101 <- GRanges(idx_peaks_101)
+
+geneset_101 <- gr_enhancer %>%
+  filter_by_overlaps(gr_peaks_101) %>%
+  { unique(.$target_gene) } %>%
+  sort()
+
+sprintf("Among the %d peaks with seqlets disappearing only during PCWs 6-10 there are %d target genes",
+        length(gr_peaks_101), length(geneset_101))
+```
+
+### GO Analysis
+```{r go_101, fig.height=5, fig.width=6}
+GO_ONT = 'BP'
+res_101 <- enrichGO(gene=geneset_101, OrgDb=org.Hs.eg.db, keyType="SYMBOL",
+                ont=GO_ONT, readable=FALSE, pvalueCutoff=0.1, qvalueCutoff=0.2)
+if (any(res_101@result$p.adjust <0.2)) {
+  print(dotplot(res_101, showCategory=10) + scale_x_continuous(expand=c(0.1, 0, 0.1, 0)))
+  print(barplot(res_101, showCategory=10))
+} else {
+  print("No significant categories at 20% FDR")
+}
+```
+
+### GO Similarity Network
+```{r fig.width=14, fig.height=12}
+if (any(res_101@result$p.adjust <0.2)) {
+  emapplot(enrichplot::pairwise_termsim(res_101), cex.params=list(line=0.2))
+} else {
+  print("No significant categories at 20% FDR")
+}
+```
+
+### TF Enrichment
+#### All Peaks
+```{r tbl_tfs_101_all}
+df_tfs_101_all <- compute_tf_enrichment(gr_seqlet_peaks_tfs, gr_peaks_101)
+df_tfs_101_all
+```
+
+#### Peak with Target Genes
+```{r tbl_tfs_101_tgt}
+df_tfs_101_targeting <- compute_tf_enrichment(gr_seqlet_peaks_tfs, filter_by_overlaps(gr_peaks_101, gr_enhancer))
+df_tfs_101_targeting
+```
+
+
+## Selected Peaks versus Samples
+
+```{r plt_heat_peak_detect_select, fig.width=6, fig.height=8}
+GENE_TARGET_HIGHLIGHTS=c(
+  # mitotic nuclear division
+  "AURKB", "CDCA5", "EREG", "ESPL1", "KIF2C","NCAPD2","NCAPH2","NDEL1","SPC25",
+  # definitive hemopoiesis
+  "HOXA9", "HOXB3", "ZFP36L2",
+  # MHC class II protein complex assembly
+  "HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DPA1", "HLA-DQA1", "HLA-DQB1", "HLA-DRB1", "HLA-DRB5",
+  # response to lipopolysaccharide
+  "FOS", "NFKBIA", "GFI1",
+  # cell-substrate adhesion
+  "FREM1", "LIMCH1", "ITGA4", "ITGAL", "SERPINE1",
+  # DNA conformation change
+  "DDX3X","TOP2A",
+  # protein autophosphorylation
+  "AATK", "CALM3", "EPHA1", "GRK5", "MAPKAPK2", "PIM3"
+)
+
+idx_peaks_selected <- c(
+  sort(idx_peaks_100),
+  sort(idx_peaks_110),
+  sort(idx_peaks_010),
+  sort(idx_peaks_101),
+  sort(idx_peaks_011),
+  sort(idx_peaks_001)
+)
+
+print(sprintf("Showing %d high-contrast peaks in total.", length(idx_peaks_selected)))
+
+gaps_peaks_selected <- c(
+  length(idx_peaks_100),
+  length(idx_peaks_110),
+  length(idx_peaks_010),
+  length(idx_peaks_101),
+  length(idx_peaks_011)
+) %>% cumsum()
+
+gaps_pcw <- c(1, 6)
+
+mat_subset_select <- mat_peak_sample[idx_peaks_selected,]
+
+row_labels <- peak2target(idx_peaks_selected, gene_subset=GENE_TARGET_HIGHLIGHTS)
+
+mat_subset_select %>%
+  pheatmap(cluster_cols=FALSE, cluster_rows=FALSE, show_rownames=TRUE,
+           gaps_row=gaps_peaks_selected, gaps_col=gaps_pcw, labels_row=row_labels,
+           color=colorRampPalette(c("white", "steelblue3"))(100))
+```
+
+
+```{r plt_waves_annotated, fig.width=6, fig.height=16, dpi=600}
+TF_HIGHLIGHTS=c("MEF2D", "HXA9", "NFKB1", "TAL1", "BACH1", "RFX1") %>% rev()
+TF_COLS <- sapply(TF_HIGHLIGHTS, function (x) { c("FALSE"="white", "TRUE"="black") }, simplify=FALSE)
+
+df_rowmeta <- peak2tffs(idx_peaks_selected, tf_subset=TF_HIGHLIGHTS) %>%
+  mutate(across(everything(), as.character)) %>%
+  `[`(,TF_HIGHLIGHTS)
+
+mat_subset_select %>%
+  pheatmap(cluster_cols=hc_full, cluster_rows=FALSE, show_rownames=TRUE,
+           gaps_row=gaps_peaks_selected, cutree_cols=3,
+           labels_row=row_labels, annotation_row=df_rowmeta,
+           color=colorRampPalette(c("white", "steelblue3"))(100), legend=FALSE,
+           annotation_colors=TF_COLS, annotation_legend=FALSE)
+```
+
+
+```{r plt_complexheatmap, fig.width=7, fig.height=10, dpi=600}
+TF_HIGHLIGHTS=c("MEF2D", "CEBPD", "HXA9", "NFKB1", "KMT2A", "JUN", "TAL1", "BACH1", "RFX1")
+TF_COLS <- sapply(TF_HIGHLIGHTS, function (x) { c("FALSE"="white", "TRUE"="black") }, simplify=FALSE)
+
+df_rowmeta <- peak2tffs(idx_peaks_selected, tf_subset=TF_HIGHLIGHTS) %>%
+  mutate(across(everything(), as.character)) %>%
+  `[`(,TF_HIGHLIGHTS)
+
+# In ComplexHeatmap, row annotations are separate objects
+# row_ha <- rowAnnotation(
+#   df = df_rowmeta,
+#   col = TF_COLS,
+#   annotation_legend_param = list(title = NULL),
+#   show_annotation_name = FALSE
+# )
+
+idx_row_labels <- which(row_labels != "")
+
+row_splits <- c(
+  rep("early-only", length(idx_peaks_100)),
+  rep("early-middle", length(idx_peaks_110)),
+  rep("middle-only", length(idx_peaks_010)),
+  rep("early-late", length(idx_peaks_101)),
+  rep("middle-late", length(idx_peaks_011)),
+  rep("late-only", length(idx_peaks_001))
+) %>% fct(levels=c("early-only", "early-middle", "middle-only",
+                   "early-late", "middle-late", "late-only"))
+
+# --- Define colors ---
+col_fun <- circlize::colorRamp2(
+  seq(0, 1, length.out = 100),
+  colorRampPalette(c("white", "steelblue3"))(100)
+)
+
+# Create main heatmap
+ht_seqlets <- Heatmap(
+  mat_subset_select > 0.5,
+  name = "value",
+  col = col_fun,
+  cluster_rows = FALSE,
+  cluster_columns = hc_full,
+  row_split = row_splits,   # simulates gaps_row
+  show_row_names = FALSE,
+  #row_labels = row_labels,
+  show_heatmap_legend = FALSE,
+  top_annotation = NULL,
+  right_annotation = rowAnnotation(
+    mark = anno_mark(
+      at = idx_row_labels,
+      labels = row_labels[idx_row_labels],
+      labels_gp = gpar(fontsize = 10),
+      link_width = unit(2, "cm")
+    )
+  )
+)
+
+# --- Row metadata heatmap (binary TF matrix) ---
+ht_tfs <- Heatmap(
+  df_rowmeta,
+  name = "TFs",
+  col = c("FALSE" = "white", "TRUE" = "black"),
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  show_row_names = FALSE,
+  show_column_names = TRUE,
+  width = unit(4, "mm") * ncol(df_rowmeta),
+  show_heatmap_legend = FALSE
+)
+
+# Combine the main heatmap with the row annotations
+ht_list <- ht_tfs + ht_seqlets
+
+# Draw it
+draw(ht_list, merge_legend = TRUE)
+
+# Export it
+pdf(file="figures/fig5c-hsc-pcw-seqlet-peaks.pdf", width=7, height=10)
+draw(ht_list, merge_legend = TRUE)
+dev.off()
+```
+
+
+
+# Export Data
+
+```{r export_go_analysis}
+df_legend <- tribble(
+  ~suffix_code, ~PCW5, ~`PCW6-10`, ~`PCW11-18`, ~description,
+  "100", TRUE, FALSE, FALSE, "early-only",
+  "110", TRUE, TRUE, FALSE, "early-middle",
+  "010", FALSE, TRUE, FALSE, "middle-only",
+  "101", TRUE, FALSE, TRUE, "early-late",
+  "011", FALSE, TRUE, TRUE, "middle-late",
+  "001", FALSE, FALSE, TRUE, "late-only")
+
+df_target_genes <- bind_rows(
+  tibble(geneset="geneset_100", gene_symbol=geneset_100),
+  tibble(geneset="geneset_110", gene_symbol=geneset_110),
+  tibble(geneset="geneset_010", gene_symbol=geneset_010),
+  tibble(geneset="geneset_101", gene_symbol=geneset_101),
+  tibble(geneset="geneset_011", gene_symbol=geneset_011),
+  tibble(geneset="geneset_001", gene_symbol=geneset_001))
+
+df_go_bp <- bind_rows(
+  tibble(geneset="geneset_100", res_100@result),
+  tibble(geneset="geneset_110", res_110@result),
+  tibble(geneset="geneset_010", res_010@result),
+  tibble(geneset="geneset_101", res_101@result),
+  tibble(geneset="geneset_011", res_011@result),
+  tibble(geneset="geneset_001", res_001@result))
+
+df_tff_enrich_all_peaks <- bind_rows(
+  tibble(peakset="peakset_100", df_tfs_100_all),
+  tibble(peakset="peakset_110", df_tfs_110_all),
+  tibble(peakset="peakset_010", df_tfs_010_all),
+  tibble(peakset="peakset_101", df_tfs_101_all),
+  tibble(peakset="peakset_011", df_tfs_011_all),
+  tibble(peakset="peakset_001", df_tfs_001_all))
+
+df_tff_enrich_targeting <- bind_rows(
+  tibble(peakset="peakset_100", df_tfs_100_targeting),
+  tibble(peakset="peakset_110", df_tfs_110_targeting),
+  tibble(peakset="peakset_010", df_tfs_010_targeting),
+  tibble(peakset="peakset_101", df_tfs_101_targeting),
+  tibble(peakset="peakset_011", df_tfs_011_targeting),
+  tibble(peakset="peakset_001", df_tfs_001_targeting))
+
+list(legend=df_legend,
+     target_genes=df_target_genes,
+     go_bp=df_go_bp,
+     tff_enrich_all_peaks=df_tff_enrich_all_peaks,
+     tff_enrich_targeting=df_tff_enrich_targeting) %>%
+  write_xlsx(path=XLSX_GO_RESULTS)
+```
+
+```{r plt_go_terms_top, fig.width=6, fig.height=6}
+geneset2lbl <- c(
+  "geneset_100"="early-only",
+  "geneset_110"="early-middle",
+  "geneset_010"="middle-only",
+  "geneset_101"="early-late",
+  "geneset_011"="middle-late",
+  "geneset_001"="late-only")
+
+idx_top_go <- df_go_bp %>%
+  filter(qvalue < 0.1) %>%
+  group_by(geneset) %>%
+  slice_max(-pvalue, n=6) %>%
+  ungroup() %>%
+  pull(ID) %>%
+  unique()
+
+mat_go_bp <- df_go_bp %>%
+  filter(ID %in% idx_top_go) %>%
+  select(geneset, qvalue, Description) %>%
+  pivot_wider(names_from=geneset, values_from=qvalue, values_fill=1) %>%
+  column_to_rownames("Description") %>%
+  { -log10(.) } %>%
+  `colnames<-`(geneset2lbl[colnames(.)]) %>%
+  `rownames<-`(str_wrap(rownames(.), 60)) %>%
+  as.matrix() %>%
+  { .[order(as.numeric((. == matrixStats::rowMaxs(.)) %*% matrix(c(-3,-2,-1,1,2,3), ncol=1))),] }
+
+mat_go_bp %>%
+  pheatmap::pheatmap(cluster_rows=FALSE, treeheight_row=20,
+           cluster_cols=FALSE, color=SCAV_COLS,
+           breaks=seq(0,3, length.out=100))
+
+mat_go_bp %>%
+  pheatmap::pheatmap(cluster_rows=FALSE, treeheight_row=20,
+           cluster_cols=FALSE, color=SCAV_COLS,
+           breaks=seq(0,3, length.out=100),
+           filename="figures/fig5d-hsc-pcw-seqlet-waves-go-terms.pdf", width=5.5, height=6)
+```
+
+
+```{r export_beds}
+GRanges(idx_peaks_100) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-100-%s.bed", SUFFIX_THRESHOLD))
+GRanges(idx_peaks_110) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-110-%s.bed", SUFFIX_THRESHOLD))
+GRanges(idx_peaks_010) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-010-%s.bed", SUFFIX_THRESHOLD))
+GRanges(idx_peaks_101) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-101-%s.bed", SUFFIX_THRESHOLD))
+GRanges(idx_peaks_011) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-011-%s.bed", SUFFIX_THRESHOLD))
+GRanges(idx_peaks_001) %>%
+  write_bed(sprintf("analysis/bed/hsc-dynamic-set-001-%s.bed", SUFFIX_THRESHOLD))
+```
+
+
+# Conclusions
+
+
+
+
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>

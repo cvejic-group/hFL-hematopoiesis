@@ -1,0 +1,333 @@
+---
+title: "TFF Target Analysis - HSC"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+# Purpose
+
+We are interested to know any relationships between TF footprints and putative target gene expression.
+For example, we want to know if
+
+- genes with multiple TFs targeting them tend to have higher expression
+- peaks with multiple TFs target genes with higher expression
+
+Here we focus on only HSCs.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(AUCell)
+library(Seurat)
+library(matrixStats)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20240111)
+
+IN_SAMPLE="HSC"
+CSV_TARGETS=sprintf("/work/aaa/projects/chrombpnet-devmult/pipeline/results/seqlet-target/glmmPG/pretrained_bias/%s_seqlet_glmmPG.counts_scores.csv.gz", IN_SAMPLE)
+BEDPE_SEQ2GENE=sprintf("/work/aaa/projects/chrombpnet-devmult/pipeline/results/seqlet-target/glmmPG/pretrained_bias/%s_seqlet_glmmPG.counts_scores.bedpe.gz", IN_SAMPLE)
+RDS_RANKING=sprintf("scratch/auc/AUCell_ranking.%s.Rds", IN_SAMPLE)
+
+theme_set(theme_bw())
+```
+
+
+# Data
+## Loading
+### Gene Expression and Ranks
+```{r load_expr_data}
+ranking_aucell <- readRDS(RDS_RANKING)
+```
+
+
+
+```{r load_data, message=FALSE}
+df_seq2gene <- read_tsv(BEDPE_SEQ2GENE,
+                        col_names=c("seqnames_tff", "start_tff", "end_tff",
+                                    "seqnames_gene", "start_gene", "end_gene",
+                                    "name", "score",
+                                    "strand_tff", "strand_gene",
+                                    "seqlet_score", "peak_score", "glmmpg_score",
+                                    "modisco_id", "pattern_name",
+                                    "tf_top", "glmmpg_id", "target_name"))
+
+df_targets <- read_csv(CSV_TARGETS, show_col_types=FALSE) %>% filter(!is.na(n_targets))
+
+gene_sets <- df_targets %>%
+  mutate(gene_set=str_split(target_ids, ";")) %>%
+  dplyr::select(pattern_name, gene_set) %>%
+  deframe()
+```
+
+
+# Analysis
+## Target Counts
+```{r plt_targets, fig.width=3, fig.height=8}
+df_targets %>%
+  mutate(pname_ord=fct_reorder(pattern_name, -n_targets)) %>%
+  ggplot(aes(x=n_targets, y=pname_ord)) + 
+  geom_bar(stat='identity', fill='steelblue', color='black', linewidth=0.2) +
+  scale_x_continuous(guide=guide_axis(angle=270), expand=c(0,0,0.1,0)) +
+  labs(y=NULL, x="Target Genes")
+```
+
+## Seqlet vs Target Counts
+```{r plt_seq_targets, fig.width=4, fig.height=4}
+df_targets %>% 
+  ggplot(aes(x=n_seqlets, y=n_targets)) + 
+  geom_point() +
+  scale_x_log10(limits=c(1,NA)) + scale_y_log10(limits=c(1,NA)) +
+  labs(x="Seqlet Regions", y="Target Genes")
+```
+
+# TFs per Target Gene
+
+```{r fig.width=4, fig.height=4}
+df_ntf <- df_targets %>%
+  mutate(target_gene=str_split(target_ids, ";")) %>%
+  dplyr::select(tf_top, target_gene) %>%
+  unnest(target_gene) %>%
+  distinct() %>%
+  dplyr::count(target_gene, name="n_tfs")
+
+df_ntf %>%
+  mutate(n_tfs_fct=fct(ifelse(n_tfs >= 10, "10+", as.character(n_tfs)),
+                       levels=c(seq(1,9), "10+"))) %>%
+  ggplot(aes(x=n_tfs_fct)) +
+  geom_bar(fill='grey80', color='black') +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x="TFs per target gene", y="Genes")
+```
+
+## Peaks per target gene
+```{r fig.width=5, fig.height=5}
+df_npeaks <- df_seq2gene %>%
+  group_by(target_name) %>%
+  mutate(n_peaks_targeting=length(unique(glmmpg_id)),
+         n_tfs_targeting=length(unique(tf_top))) %>%
+  ungroup()
+
+df_npeaks_summary <- df_npeaks %>%
+  distinct(target_name, n_peaks_targeting, n_tfs_targeting)
+
+pmain <- df_npeaks_summary %>%
+  ggplot(aes(x=n_peaks_targeting, y=n_tfs_targeting)) +
+  geom_jitter(size=0.3, alpha=0.3, width=0.5, height=0.5) +
+  scale_x_continuous(limits=c(0,NA), expand=c(0,0,0.1,0)) +
+  scale_y_continuous(limits=c(0,NA), expand=c(0,0,0.1,0)) +
+  labs(x="Peaks targeting gene", y="TFs targeting gene")
+
+xhist <- df_npeaks_summary %>%
+  ggplot(aes(x=n_peaks_targeting)) +
+  geom_histogram(binwidth=1, fill='grey80', color='black') +
+  scale_x_continuous(limits=c(0,NA), expand=c(0,0,0.1,0), guide="none") +
+  scale_y_continuous(expand=c(0,0,0.1,0)) +
+  labs(x=NULL, y="Genes") +
+  theme_minimal() +
+  theme(panel.grid.major.x=element_blank(),
+        panel.grid.minor.x=element_blank(),
+        panel.grid.minor.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.x=element_blank())
+
+yhist <- df_npeaks_summary %>%
+  ggplot(aes(y=n_tfs_targeting)) +
+  geom_histogram(binwidth=1, fill='grey80', color='black') +
+  scale_x_continuous(expand=c(0,0,0.1,0), guide=guide_axis(angle=270)) +
+  scale_y_continuous(limits=c(0,NA), expand=c(0,0,0.1,0), guide="none") +
+  labs(x="Genes", y=NULL) +
+  theme_minimal() +
+  theme(panel.grid.major.y=element_blank(),
+        panel.grid.minor.y=element_blank(),
+        panel.grid.minor.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.title.y=element_blank())
+
+xhist + patchwork::plot_spacer() + pmain + yhist + 
+  patchwork::plot_layout(
+    ncol=2, 
+    nrow=2, 
+    widths=c(4, 1),
+    heights=c(1, 4),
+    axes='collect'
+  )
+```
+
+## TFs per peak for genes with only 1 P-G link
+These genes will form the two sets that we will contrast.
+```{r plt_ntfs_single_pgl_genes, fig.width=2, fig.height=3}
+df_npeaks %>%
+  filter(n_peaks_targeting == 1) %>%
+  distinct(target_name, n_tfs_targeting) %>%
+  mutate(fct_ntf=fct(ifelse(n_tfs_targeting > 1, "multiple", "single"), levels=c("single", "multiple"))) %>%
+  ggplot(aes(x=fct_ntf)) +
+  geom_bar(fill='grey90', color='black', linewidth=0.5) +
+  geom_text(stat="count", aes(label=..count..), vjust=-0.7, y=0) +
+  scale_y_continuous(limits=c(0,2000), expand=c(0,0,0,0)) +
+  labs(x="Targeting TFs", y="Genes (single P-G link only)")
+
+ggsave("figures/suppl-fig-targeting-tfs-single-peak-only.pdf", dpi=300)
+```
+
+## TFs per peak for genes with any P-G link numbers
+These genes will form the two sets that we will contrast.
+```{r plt_ntfs_any_pgl_genes, fig.width=2, fig.height=3}
+df_npeaks %>%
+  distinct(target_name, n_tfs_targeting) %>%
+  mutate(fct_ntf=fct(ifelse(n_tfs_targeting > 1, "multiple", "single"), levels=c("single", "multiple"))) %>%
+  ggplot(aes(x=fct_ntf)) +
+  geom_bar(fill='grey90', color='black', linewidth=0.5) +
+  geom_text(stat="count", aes(label=..count..), vjust=-0.7, y=0) +
+  scale_y_continuous(limits=c(0,2000), expand=c(0,0,0,0)) +
+  labs(x="Targeting TFs", y="Genes")
+
+ggsave("figures/suppl-fig-targeting-tfs-any-peaks.pdf", dpi=300)
+```
+
+
+# Median expression ranks of genes
+## All genes (single- and multi-peak)
+```{r compute_ranks, }
+get_median_rank_df <- function (genes, set_name) {
+  getRanking(ranking_aucell)[genes,] %>%
+    colMedians() %>%
+    enframe(name="cell_id", value="median_rank") %>%
+    mutate(set_id=set_name)
+}
+
+expected_median <- (nrow(ranking_aucell) + 1)/2
+
+genes_tf_single <- df_ntf %>% filter(n_tfs == 1) %>% pull(target_gene)
+genes_tf_double <- df_ntf %>% filter(n_tfs == 2) %>% pull(target_gene)
+genes_tf_three_plus <- df_ntf %>% filter(n_tfs > 2) %>% pull(target_gene)
+genes_tf_multi <- df_ntf %>% filter(n_tfs > 1) %>% pull(target_gene)
+
+df_ranks2 <- bind_rows(get_median_rank_df(genes_tf_single, "single"),
+                      get_median_rank_df(genes_tf_multi, "multiple")) %>%
+  mutate(set_id=fct(set_id, levels=c("single", "multiple")))
+
+df_ranks3 <- bind_rows(get_median_rank_df(genes_tf_single, "1"),
+                      get_median_rank_df(genes_tf_double, "2"),
+                      get_median_rank_df(genes_tf_three_plus, "3+")) %>%
+  mutate(set_id=fct(set_id, levels=c("1", "2", "3+")))
+```
+
+
+
+### Single or Multiple TFs
+```{r fig.width=2, fig.height=3}
+df_ncells <- df_ranks2 %>% dplyr::count(set_id)
+
+df_ranks2 %>%
+  ggplot(aes(x=set_id, y=median_rank)) +
+  geom_hline(yintercept=expected_median, linetype='dashed', color='orchid') +
+  geom_boxplot(outliers=FALSE) +
+  # geom_text(data=df_ncells, aes(x=set_id, y=max(df_ranks2$median_rank), label=paste0("N=", n)),
+  #           vjust=1, size=3.5) +
+  scale_y_continuous(transform='reverse') +
+  labs(x="Targeting TFs", y="Median rank of gene set")
+
+ggsave("figures/suppl-fig-tf-target-ranks-any-peaks.pdf", dpi=300)
+```
+
+```{r paired_t_test_ranks_any}
+df_ranks2 %>% 
+  pivot_wider(values_from=median_rank, names_from=set_id) %>%
+  { t.test(.$single, .$multiple, paired=TRUE) }
+```
+
+
+### Three or More TFs
+```{r fig.width=4, fig.height=3}
+df_ranks3 %>%
+  ggplot(aes(x=set_id, y=median_rank)) +
+  geom_hline(yintercept=expected_median, linetype='dashed', color='orchid') +
+  geom_boxplot(outliers=FALSE) +
+  scale_y_continuous(transform='reverse') +
+  labs(x="TFs per target gene", y="Median rank of gene set")
+```
+
+
+## Single-peak genes only
+```{r compute_ranks_single, }
+genesets_single_peak <- df_npeaks %>%
+  filter(n_peaks_targeting == 1) %>%
+  distinct(target_name, n_tfs_targeting) %>%
+  mutate(fct_ntf=fct(ifelse(n_tfs_targeting > 1, "multiple", "single"), levels=c("single", "multiple"))) %>%
+  dplyr::select(fct_ntf, target_name) %>%
+  { split(.$target_name, .$fct_ntf) }
+
+df_ranks2_single <- bind_rows(get_median_rank_df(genesets_single_peak$single, "single"),
+                      get_median_rank_df(genesets_single_peak$multi, "multiple")) %>%
+  mutate(set_id=fct(set_id, levels=c("single", "multiple")))
+```
+
+
+### Single or Multiple TFs
+```{r fig.width=2, fig.height=3.17}
+df_ranks2_single %>%
+  ggplot(aes(x=set_id, y=median_rank)) +
+  geom_hline(yintercept=expected_median, linetype='dashed', color='orchid') +
+  geom_boxplot(outliers=FALSE) +
+  scale_y_continuous(transform='reverse') +
+  labs(x="Targeting TFs\n(single-peak genes)", y="Median rank of gene set")
+
+ggsave("figures/suppl-fig-tf-target-ranks-single-peak.pdf", dpi=300)
+```
+
+
+```{r paired_t_test_ranks_single_peak}
+df_ranks2_single %>% 
+  pivot_wider(values_from=median_rank, names_from=set_id) %>%
+  { t.test(.$single, .$multiple, paired=TRUE) }
+```
+
+
+# Conclusion
+
+There is evidence that having more TFs regulating a gene is associated with the gene being more highly expressed.
+Further, this includes both genes targeted by multiple peaks and single peak genes where multiple TFs are detected.
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>
