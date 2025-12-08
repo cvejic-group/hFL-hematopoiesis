@@ -1,0 +1,3 @@
+[submodule "tf_footprinting/chrombpnet-smk-pipeline"]
+	path = tf_footprinting/chrombpnet-smk-pipeline
+	url = git@github.com:cvejic-group/chrombpnet-smk-devmult.git
