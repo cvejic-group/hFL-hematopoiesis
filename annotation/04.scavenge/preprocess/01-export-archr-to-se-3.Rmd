@@ -1,0 +1,282 @@
+---
+title: "Export ArchR to SummarizedExperiment"
+author: "Mervin M Fansler"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document: 
+    code_folding: show
+    df_print: paged
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+
+# Purpose
+
+As an input for SCANVENGE, we require a `SummarizedExperiment` object representation of peaks per cell. Currently, this is stored in the ArchR project as Arrow (HDF5) files. Here we load that data and export it as an HDF5-backed `SummarizedExperiment`.
+
+Here we use a different layout for the chunks in the HDF5 array.
+
+# Initialization
+
+## Libraries
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(HDF5Array)
+library(SummarizedExperiment)
+library(ArchR)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(BiocParallel)
+```
+
+## Parameters
+```{r set_params}
+set.seed(20241014)
+
+GENOME="hg38"
+N_THREADS=48L
+PATH_ARCHPROJ="/work/archr_48FL"
+PATH_OUT="data/se"
+OUT_PREFIX="se_peak10k_cell10k_48FL_"
+
+DelayedArray::setAutoBPPARAM(MulticoreParam(N_THREADS))
+register(MulticoreParam(N_THREADS))
+```
+
+## Initialize Settings
+```{r archr_settings}
+# default number of threads
+addArchRThreads(threads=N_THREADS)
+# add a reference genome annotation for ArchR
+addArchRGenome(GENOME)
+# chr prefix to exclude KI/GL scaffolds
+addArchRChrPrefix(chrPrefix=TRUE)
+
+setHDF5DumpDir(tempdir())
+```
+
+## Functions
+**Functions for HDF5-backed SummarizedExperiment.** The dimensionality of the matrix is too large and therefore runs into issues when trying to load as a sparse matrix from Matrix. Note that this is actually not a memory issue (we only reached 128 GB allocated of 768 GB available). Rather, this has to do with the Cholesky implementation in Matrix that refuses to work with such a large matrix.
+
+```{r methods}
+convertToH5SparseMatrix <- function(se, useMatrix, id) {
+    dirpath <- sprintf("%s/%s/%s", tempdir(), id, useMatrix)
+    dir.create(dirpath, recursive=TRUE, showWarnings=FALSE)
+    filepath <- tempfile(pattern="matrix", fileext=".h5", tmpdir=dirpath)
+    mat <- assay(se, useMatrix)
+    mat2 <- writeTENxMatrix(mat, filepath=filepath)
+    assay(se, useMatrix) <- mat2
+    se
+}
+
+####################################################################
+# Reading Matrices/Arrays from Arrow Files
+####################################################################
+
+#' Get a data matrix stored in an ArchRProject
+#' 
+#' This function gets a given data matrix from an `ArchRProject` and returns it as a `SummarizedExperiment`.
+#' This function will return the matrix you ask it for, without altering that matrix unless you tell it to.
+#' For example, if you added your `PeakMatrix` using `addPeakMatrix()` with `binarize = TRUE`, then
+#' `getH5SparseMatrixFromProject()` will return a binarized `PeakMatrix`. Alternatively, you could set `binarize = TRUE`
+#' in the parameters passed to `getMatrixFromProject()` and the `PeakMatrix` will be binarized as you pull
+#' it out. No other normalization is applied to the matrix by this function.
+#'
+#' @param ArchRProj An `ArchRProject` object to get data matrix from.
+#' @param useMatrix The name of the data matrix to retrieve from the given ArrowFile. Options include "TileMatrix", "GeneScoreMatrix", etc.
+#' @param useSeqnames A character vector of chromosome names to be used to subset the data matrix being obtained.
+#' @param excludeChr A character vector containing the `seqnames` of the chromosomes that should be excluded from this analysis.
+#' @param verbose A boolean value indicating whether to use verbose output during execution of  this function. Can be set to FALSE for a cleaner output.
+#' @param binarize A boolean value indicating whether the matrix should be binarized before return.
+#' This is often desired when working with insertion counts. Note that if the matrix has already been binarized previously, this should be set to `TRUE`.
+#' @param logFile The path to a file to be used for logging ArchR output.
+#'
+#' @examples
+#'
+#' #Get Test Project
+#' proj <- getTestProject()
+#'
+#' # Get Fragments
+#' se <- getH5SparseMatrixFromProject(proj)
+#'
+#' @export
+getH5SparseMatrixFromProject <- function(
+  ArchRProj = NULL,
+  useMatrix = "GeneScoreMatrix",
+  useSeqnames = NULL,
+  excludeChr = NULL,
+  verbose = TRUE,
+  binarize = FALSE,
+  threads = getArchRThreads(),
+  logFile = createLogFile("getH5SparseMatrixFromProject")
+  ){
+
+  # load internal functions
+  .validInput <- ArchR:::.validInput
+  .startLogging <- ArchR:::.startLogging
+  .logThis <- ArchR:::.logThis
+  .safelapply <- ArchR:::.safelapply
+  .logDiffTime <- ArchR:::.logDiffTime
+  .availableCells <- ArchR:::.availableCells
+  
+    
+  .validInput(input = ArchRProj, name = "ArchRProj", valid = c("ArchRProj"))
+  .validInput(input = useMatrix, name = "useMatrix", valid = c("character"))
+  .validInput(input = useSeqnames, name = "useSeqnames", valid = c("character","null"))
+  .validInput(input = excludeChr, name = "excludeChr", valid = c("character", "null"))
+  .validInput(input = verbose, name = "verbose", valid = c("boolean"))
+  .validInput(input = binarize, name = "binarize", valid = c("boolean"))
+  .validInput(input = threads, name = "threads", valid = c("integer"))
+  
+  tstart <- Sys.time()
+  .startLogging(logFile = logFile)
+  .logThis(mget(names(formals()),sys.frame(sys.nframe())), "getH5SparseMatrixFromProject Input-Parameters", logFile = logFile)
+
+  ArrowFiles <- getArrowFiles(ArchRProj)
+
+  cellNames <- ArchRProj$cellNames
+
+  avMat <- getAvailableMatrices(ArchRProj)
+  if(useMatrix %ni% avMat){
+    stop("useMatrix is not in Available Matrices see getAvailableMatrices")
+  }
+
+  seL <- .safelapply(seq_along(ArrowFiles), function(x){
+
+    .logDiffTime(paste0("Reading ", useMatrix," : ", names(ArrowFiles)[x], "(",x," of ",length(ArrowFiles),")"), 
+      t1 = tstart, verbose = FALSE, logFile = logFile)
+
+    allCells <- .availableCells(ArrowFile = ArrowFiles[x], subGroup = useMatrix)
+    allCells <- allCells[allCells %in% cellNames]
+
+    if(length(allCells) != 0){
+
+      o <- getMatrixFromArrow(
+        ArrowFile = ArrowFiles[x],
+        useMatrix = useMatrix,
+        useSeqnames = useSeqnames,
+        excludeChr = excludeChr,
+        cellNames = allCells, 
+        ArchRProj = ArchRProj,
+        verbose = FALSE,
+        binarize = binarize,
+        logFile = logFile
+      )
+
+      .logDiffTime(paste0("Converting to H5SparseMatrix", useMatrix," : ", names(ArrowFiles)[x], "(",x," of ",length(ArrowFiles),")"), 
+        t1 = tstart, verbose = FALSE, logFile = logFile)
+      o <- convertToH5SparseMatrix(o, useMatrix=useMatrix, id=names(ArrowFiles)[[x]])
+
+      .logDiffTime(paste0("Completed ", useMatrix," : ", names(ArrowFiles)[x], "(",x," of ",length(ArrowFiles),")"), 
+        t1 = tstart, verbose = FALSE, logFile = logFile)
+
+      o
+
+    }else{
+
+      NULL
+      
+    }
+
+  }, threads = threads) 
+  
+  #RowData
+  .logDiffTime("Checking rowData", t1 = tstart, verbose = verbose, logFile = logFile)
+  rD1 <- rowData(seL[[1]])
+  rD <- lapply(seq_along(seL), function(x){
+    identical(rowData(seL[[x]]), rD1)
+  }) %>% unlist %>% all
+  if(!rD){
+    stop("Error with rowData being equal for every sample!")
+  }
+
+  #RowRanges
+  .logDiffTime("Checking rowRanges", t1 = tstart, verbose = verbose, logFile = logFile)
+  rR1 <- rowRanges(seL[[1]])
+  rR <- lapply(seq_along(seL), function(x){
+    identical(rowRanges(seL[[x]]), rR1)
+  }) %>% unlist %>% all
+  if(!rR){
+    stop("Error with rowRanges being equal for every sample!")
+  }
+  
+  .logDiffTime("Constructing SummarizedExperiment", t1 = tstart, verbose = verbose, logFile = logFile)
+  se <- do.call(cbind, seL)
+  se <- sort(se)
+  
+  .logDiffTime("Cleaning up temporary components", t1 = tstart, verbose = verbose, logFile = logFile)
+  rm(seL)
+  gc()
+
+  .logDiffTime("Finished SummarizedExperiment Creation", t1 = tstart, verbose = verbose, logFile = logFile)
+
+  se
+  
+}
+```
+
+# Data
+## Loading
+```{r load_data, message=FALSE}
+proj <- loadArchRProject(path=PATH_ARCHPROJ)
+
+# lsimat
+# embeding coordinates
+umapdf <- proj@embeddings@listData$UMAP$df
+# reduced dimension matrix; cell x LSI (30)
+lsi_mat <- proj@reducedDims$Harmony$matDR
+
+getAvailableMatrices(ArchRProj = proj)
+```
+
+```{r load_matrix}
+proj_PeakMatrix <- getH5SparseMatrixFromProject(ArchRProj=proj, useMatrix="PeakMatrix")
+```
+
+## Attach Reduced Dimensions
+In later versions, we could attach these values in `reducedDims(se)`, but this older Bioconductor version lacks this, so we will attach them to the `metadata(se)` of the object.
+
+```{r redDims}
+metadata(proj_PeakMatrix)$reducedDims <- list(UMAP=as.matrix(umapdf)[colnames(proj_PeakMatrix),],
+                                              LSI=lsi_mat[colnames(proj_PeakMatrix),])
+
+proj_PeakMatrix
+```
+
+## Export Object
+```{r export}
+dir.create(PATH_OUT, recursive=TRUE)
+
+chunkdim <- c(10000L, 10000L)
+saveHDF5SummarizedExperiment(proj_PeakMatrix, dir=PATH_OUT,
+                             prefix=OUT_PREFIX,
+                             chunkdim=chunkdim, as.sparse=TRUE, verbose=TRUE)
+```
+
+---
+
+# Runtime Details
+## Session Info
+<details>
+```{r sesh_info, echo=FALSE}
+sessionInfo()
+```
+</details>
+
+## Conda Environment
+<details>
+```{bash conda_info, comment="", echo=FALSE}
+if ! command -v conda &> /dev/null
+then
+  echo "Conda not detected."
+elif [ -z "${CONDA_PREFIX}" ]
+then
+  echo "No active Conda environment."
+else
+  echo "## Conda Environment YAML"
+  PREFIX=$(dirname $(dirname $(which R)))
+  conda env export -p $PREFIX
+fi
+```
+</details>
