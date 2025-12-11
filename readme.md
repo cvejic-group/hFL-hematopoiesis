@@ -19,6 +19,10 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * 01.wnn_anno
   * 02.multivi
   * 03.archr
+  * 04.scavenge
+    * preprocess
+    * [scavenge-smk-pipeline](https://github.com/cvejic-group/scavenge-smk-devmult)
+    * analysis
 
 * cell_abundance: developmental changes in cell composition
   * milo
@@ -44,6 +48,11 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * magama
 
 * DNAm: DNA methylation
+
+* tf_footprinting: TF footprint identification with ChromBPNet, TF-MoDISCo, and Fi-NeMo
+  * [chrombpnet-smk-pipeline](https://github.com/cvejic-group/chrombpnet-smk-devmult)
+  * postprocess
+  * analysis
 
 * misc
   * variancePartition
