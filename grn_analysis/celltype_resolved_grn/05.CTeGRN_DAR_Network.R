@@ -10,7 +10,7 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/06.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 library(purrr)
@@ -19,13 +19,11 @@ library(igraph)
 library(readr)
 
 # Load CT-eGRN data
-CT_eGRN_DAR_Prune_Metadata.l <- readRDS(paste0(RES_DIR, "eRegulons_CT_Prune/CT_eGRN_DAR_Prune_Metadata.rds"))
-Peak_propCT.l <- readRDS(paste0(RES_DIR, "eRegulons_CT_Prune/Peak_propPerCT_list.rds"))
-# TOPeReg.mats <- readRDS(paste0(RES_DIR, "eRegulons_AUCell/TOPeReg_TF_AUCell_mat.rds"))
-# TOPeReg_TF.m <- TOPeReg.mats$TF_EXPR.m
+CT_eGRN_DAR_Prune_Metadata.l <- readRDS(paste0(RES_DIR, "CT_eGRN_DAR_Prune_Metadata.rds"))
+# Peak_propCT.l <- readRDS(paste0(RES_DIR, "Peak_propPerCT_list.rds"))
 
 # snRNA-seq data
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20250401.rds")
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
 ## Cell Metadata
 cell_metadata <- FL.SeuratObj@meta.data
 
@@ -128,7 +126,7 @@ for (ct in TARGET_CT) {
 ##########################
 
 # Get DEGs for CL
-DEG.df <- read.csv("/work/DevM_analysis/01.annotation/10.integration_joint_clean/data/FL_wnn_markerGenes.v00.csv")
+DEG.df <- read.csv("~/work/FL_wnn_markerGenes.v00.csv")
 DEG_Network.df <- DEG.df %>% 
   dplyr::filter(group %in% TARGET_CT) %>%
   dplyr::filter(logfoldchanges > 0.3) %>%
@@ -210,8 +208,7 @@ for(i in 1:2) {
                                class = KEEP)
   ) %>% distinct()
   edges_fusion <- rbind(edges, edges2, edges_share) %>% distinct()
-  # write_tsv(edges, paste0("./results/CT_eGRN_DAR_Networks/RUNX1_HSC_MK/edges_RUNX1_in_", ct, ".tsv"))
-  write_tsv(edges_fusion, paste0("./results/CT_eGRN_DAR_Networks/RUNX1_HSC_MK/edges_fusion_RUNX1_in_", ct, ".tsv"))
+  write_tsv(edges_fusion, paste0("edges_fusion_RUNX1_in_", ct, ".tsv"))
   ## Write nodes
   nodes <- tibble(id = unique(c(edges_fusion$from, edges_fusion$to))) %>%
     mutate(
@@ -228,7 +225,7 @@ for(i in 1:2) {
         TRUE  ~ "Other"
       )
     )
-  write_tsv(nodes, paste0("./results/CT_eGRN_DAR_Networks/RUNX1_HSC_MK/nodes_fusion_RUNX1_in_", ct, ".tsv"))
+  write_tsv(nodes, paste0("nodes_fusion_RUNX1_in_", ct, ".tsv"))
 }
 
 ###############
@@ -270,14 +267,14 @@ for (ct in TARGET_CT) {
     theme(
       plot.title = element_text(face="bold", hjust = 0.5)
     )
-  ggsave(filename = paste0(FIG_DIR, "05.CTeGRN_DAR_Network/RUNX1_HSC_MK/GO_BP_", TARGET_TF, "_", ct, ".pdf"),
+  ggsave(filename = paste0(FIG_DIR, "RUNX1_HSC_MK/GO_BP_", TARGET_TF, "_", ct, ".pdf"),
          plot = p, width = 6, height = 10)
 }
 ### Write GO terms
 library(writexl)
 write_xlsx(
   GOres_list,
-  path = "./results/CT_eGRN_DAR_Networks/RUNX1_HSC_MK/RUNX1_HSC_MK_GO_list.xlsx"
+  path = "RUNX1_HSC_MK_GO_list.xlsx"
 )
 
 #############################
@@ -288,8 +285,8 @@ write_xlsx(
 library(AUCell)
 library(GSEABase)
 ## Load snRNA-seq data with WNN UMAP
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20250401.rds")
-FL_wnn.df <- read.csv("/work/DevM_analysis/01.annotation/10.integration_joint_clean/data/FL_wnn_umap.csv", 
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
+FL_wnn.df <- read.csv("~/work/FL_wnn_umap.csv", 
                       row.names = 1)
 rownames(FL_wnn.df) <- gsub(pattern = "_", replacement = "#", 
                             x = rownames(FL_wnn.df), fixed = TRUE)
@@ -299,7 +296,7 @@ wnn_reduction <- CreateDimReducObject(embeddings = as.matrix(FL_wnn.df),
                                       assay = DefaultAssay(FL.SeuratObj))
 FL.SeuratObj[["wnn"]] <- wnn_reduction
 ## Load gene rank per cell
-cells_rankings <- readRDS("./results/eRegulons_AUCell/GeneRank_for_AUCell.rds")
+cells_rankings <- readRDS("~/work/GeneRank_for_AUCell.rds")
 cells_rankings2 <- cells_rankings[, colnames(FL.SeuratObj)]
 
 #  Geneset setup
@@ -313,7 +310,7 @@ geneSets <- GeneSetCollection(geneSets.l)
 names(geneSets)
 ## Compute gene based AUCell score
 cells_AUC <- AUCell_calcAUC(geneSets, cells_rankings)
-saveRDS(cells_AUC, paste0("./results/eRegulons_CT_Prune/CT_eGRN_DAR_Prune_AUCell/CT_eGRN_DAR_Prune_", TARGET_TF, "_AUCell.rds"))
+saveRDS(cells_AUC, paste0("CT_eGRN_DAR_Prune_", TARGET_TF, "_AUCell.rds"))
 
 # Add new AUCell data to Seurat Object
 cells_AUC.m <- assay(cells_AUC)
@@ -341,8 +338,8 @@ p <- ggplot(umap_df, aes(x = wnn_1, y = wnn_2, color = AUC)) +
     plot.title      = element_text(face = "bold", hjust = 0.5)
   ) +
   ggtitle(paste0("UMAP colored by ", idx))
-# p
-save_plot(filename = paste0("./plots/05.CTeGRN_DAR_Network/RUNX1_HSC_MK/", idx, "_UMAP.pdf"),
+p
+save_plot(filename = paste0("RUNX1_HSC_MK/", idx, "_UMAP.pdf"),
           p, base_height = 10, base_width = 10)
 
 
@@ -361,34 +358,9 @@ for (ct in TARGET_CT) {
   RegionSet_CT.df[[ct]] <- tmp
 }
 RegionSet_CT.df <- bind_rows(RegionSet_CT.df, .id = "source")
-write_tsv(RegionSet_CT.df, "./results/CT_eGRN_DAR_Networks/RUNX1_HSC_MK/RUNX1_HSC_MK_DTR.tsv")
+write_tsv(RegionSet_CT.df, "RUNX1_HSC_MK_DTR.tsv")
 
-# Python Calculation #
-
-# Load AUCell scores
-library(hdf5r)
-library(rhdf5)
-read_csr <- function(file, group){
-  data    <- h5read(file, paste0(group, "/data"))
-  indices <- h5read(file, paste0(group, "/indices"))
-  indptr  <- h5read(file, paste0(group, "/indptr"))
-  shape   <- h5read(file, paste0(group, "/shape"))
-  rn      <- rawToChar(h5read(file, paste0(group, "/rownames")))
-  cn      <- rawToChar(h5read(file, paste0(group, "/colnames")))
-  library(Matrix)
-  mat <- sparseMatrix(i = indices + 1, p = indptr, x = data,
-                      dims = shape, repr = "C") # CSR
-  rownames(mat) <- rn; colnames(mat) <- cn
-  mat
-}
-M <- read_csr("./data/AUCell_RUNX1_HSC_MK_DTR.h5", "direct_gene_based_AUC")
-
-h5file <- H5File$new("./data/AUCell_RUNX1_HSC_MK_DTR.h5", mode = "r")
-group <- h5file[["direct_gene_based_AUC"]]
-row_names <- group[["axis0"]]$read()
-col_names <- group[["axis1"]]$read()
-auc_mat <- group[["block0_values"]]$read()
-dimnames(auc_mat) <- list(row_names, col_names)
+#------ Python Calculation ------#
 
 
 

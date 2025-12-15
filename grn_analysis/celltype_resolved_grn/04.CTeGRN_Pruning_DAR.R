@@ -10,7 +10,7 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/06.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 library(AUCell)
@@ -32,14 +32,14 @@ BA_eRegulon_meta.df <- raw_eRegulon_meta.df %>% dplyr::filter(class == "+/+")
 
 # Form CT-eRegulons list
 CT_eRegulon.l <-readRDS(paste0(RES_DIR, 
-                               "eRegulons_CT_Filter/CT_eGRN_Filter_Metadata.rds"))
+                               "CT_eGRN_Filter_Metadata.rds"))
 
 ################################ 
 ### Pruning CT-eGRN with DAR ###
 ################################
 
 # Import DARs
-DAR.path <- "~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/DAR_outs/scp_snakemake_ALL_pcw/data/region_sets/DARs_cell_type/"
+DAR.path <- "~/work/DARs_cell_type/"
 DAR.peaks.l <- list()
 for (CT in CT_ORDER) {
   DAR.peaks.l[[CT]] <- rtracklayer::import(paste0(DAR.path, CT, ".bed"))
@@ -87,7 +87,7 @@ for (CT in CT_ORDER) {
 }
 # Save Pruned results
 saveRDS(prune_meta.l, 
-        paste0(RES_DIR, "eRegulons_CT_Prune/CT_eGRN_DAR_Prune_Metadata.rds"))
+        paste0(RES_DIR, "CT_eGRN_DAR_Prune_Metadata.rds"))
 ### Save to xlsx
 library(openxlsx)
 wb <- createWorkbook()
@@ -95,5 +95,5 @@ for(CT in CT_ORDER){
   addWorksheet(wb, CT)
   writeData(wb, CT, prune_meta.l[[CT]]$CT_eRegulon_prune_meta)
 }
-saveWorkbook(wb, paste0(RES_DIR, "eRegulons_CT_Prune/CT_eGRN_DAR_Prune_Metadata.xlsx"), 
+saveWorkbook(wb, paste0(RES_DIR, "CT_eGRN_DAR_Prune_Metadata.xlsx"), 
              overwrite = TRUE)

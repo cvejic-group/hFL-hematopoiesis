@@ -10,17 +10,17 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Load data
-TOPeReg_TF_AUCell_mat <- readRDS(paste0(RES_DIR, "eRegulons_AUCell/TOPeReg_TF_AUCell_mat.rds"))
+TOPeReg_TF_AUCell_mat <- readRDS(paste0(RES_DIR, "TOPeReg_TF_AUCell_mat.rds"))
 TF_EXPR.m <- TOPeReg_TF_AUCell_mat$TF_EXPR.m
 AUC_GENE.m <- TOPeReg_TF_AUCell_mat$AUC_GENE.m
 AUC_REGION.m <- TOPeReg_TF_AUCell_mat$AUC_REGION.m
 
 # snRNA-seq data
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20251014.rds")
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
 ## Cell Metadata
 cell_metadata <- FL.SeuratObj@meta.data
 
@@ -48,12 +48,12 @@ FL.subset.SeuratObj <- subset(FL.subset.SeuratObj,
                               subset = celltype_latest %in% CT.keep)
 ### TF selections
 XGBoost_RMT_TFRes.l <- read_rds(paste0(RES_DIR, 
-                                       "eRegulons_CT_Filter/XGBoost_RMT_TFRes_wRankedFeature.rds"))
+                                       "XGBoost_RMT_TFRes_wRankedFeature.rds"))
 TF.v <- lapply(XGBoost_RMT_TFRes.l[CT.keep], 
                function(x){
-                 # shap.df <- x$shap
-                 # shap.df <- shap.df[order(-shap.df$SHAP_ratio), ]
-                 return(x$ranked_features[1:5])}) |> unlist() |> unique()
+                 return(x$ranked_features[1:5])}) |> 
+  unlist() |> 
+  unique()
 ### Coordinate
 TF_EXPR_sub.m <- TF_EXPR.m[TF.v, colnames(FL.subset.SeuratObj)]
 AUC_GENE_sub.m <- AUC_GENE.m[TF.v, colnames(FL.subset.SeuratObj)]
@@ -150,7 +150,7 @@ df_all <- purrr::reduce(list(df_color, df_size, df_alpha), dplyr::left_join, by 
 
 # Generate Plots
 ## With TF Expression
-Cairo::CairoPDF(paste0(FIG_DIR, "01.AUC_TF_Heatmap_Selected/FL_PCW5_CT9_AUCell_heatmap2.pdf"), 
+Cairo::CairoPDF(paste0(FIG_DIR, "FL_selected_AUCell_heatmap.pdf"), 
                 width = 13, height = 8, family = "Arial")
 ggplot(df_all, aes(x = CellType, y = Gene)) +
   geom_tile(aes(fill = TF), color = "white") +

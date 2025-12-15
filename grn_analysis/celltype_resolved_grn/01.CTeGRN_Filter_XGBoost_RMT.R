@@ -34,7 +34,7 @@ library(furrr)
 #################
 
 # snRNA-seq data
-FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat_20251014.rds")
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
 ## Cell Metadata
 cell_metadata <- FL.SeuratObj@meta.data
 

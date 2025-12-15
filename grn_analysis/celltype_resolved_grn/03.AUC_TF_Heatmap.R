@@ -10,17 +10,17 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Load data
-TOPeReg_TF_AUCell_mat <- readRDS(paste0(RES_DIR, "eRegulons_AUCell/TOPeReg_TF_AUCell_mat.rds"))
+TOPeReg_TF_AUCell_mat <- readRDS(paste0(RES_DIR, "TOPeReg_TF_AUCell_mat.rds"))
 TF_EXPR.m <- TOPeReg_TF_AUCell_mat$TF_EXPR.m
 AUC_GENE.m <- TOPeReg_TF_AUCell_mat$AUC_GENE.m
 AUC_REGION.m <- TOPeReg_TF_AUCell_mat$AUC_REGION.m
 
 # snRNA-seq data
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20251014.rds")
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
 ## Cell Metadata
 cell_metadata <- FL.SeuratObj@meta.data
 
@@ -112,7 +112,7 @@ df_all <- purrr::reduce(list(df_color, df_size, df_alpha), dplyr::left_join, by 
 
 # Generate Plots
 ## With TF Expression
-Cairo::CairoPDF(paste0(FIG_DIR, "01.AUC_TF_Heatmap/FL_AUC_TF_heatmap.pdf"), 
+Cairo::CairoPDF(paste0(FIG_DIR, "FL_AUC_TF_heatmap.pdf"), 
                 width = 48, height = 12, family = "Arial")
 ggplot(df_all, aes(x = CellType, y = Gene)) +
   geom_tile(aes(fill = TF), color = "white") +
@@ -137,7 +137,7 @@ ggplot(df_all, aes(x = CellType, y = Gene)) +
   coord_flip()
 dev.off()
 ## Without TF Expression
-Cairo::CairoPDF(paste0(FIG_DIR, "01.AUC_TF_Heatmap/FL_AUC_heatmap.pdf"), 
+Cairo::CairoPDF(paste0(FIG_DIR, "FL_AUC_heatmap.pdf"), 
                 width = 48, height = 12, family = "Arial")
 ggplot(df_all, aes(x = as.factor(CellType), y = Gene)) +
   geom_tile(aes(fill = Gene_base), color = "white") +

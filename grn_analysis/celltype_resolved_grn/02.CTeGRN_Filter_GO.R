@@ -10,7 +10,7 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Load additional packages
@@ -24,19 +24,7 @@ library(org.Hs.eg.db)
 ###################################################
 
 # Load CT-eRegulons info
-CT_eReg_XGBoost_RMT.df <- readRDS(paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes.rds"))
-
-# Form CT-eRegulons list
-CT_eRegulon.l <- list()
-CT_eReg.df <- CT_eReg_XGBoost_RMT.df
-for (CT in CT_ORDER) {
-  ### Add MAZ for Transient population
-  if (CT %in% c("MEMP-t", "MastP-t", "MDP", "LMPP", "LP", "Cycling-LP")) {
-    CT_eRegulon.l[[CT]] <- union(CT_eReg.df[[CT]]$confident_features, c("MAZ", "CHURC1", "CEBPZ"))
-  } else {
-    CT_eRegulon.l[[CT]] <- CT_eReg.df[[CT]]$confident_features 
-  }
-}
+CT_eReg_XGBoost_RMT.df <- readRDS(paste0(RES_DIR, "XGBoost_RMT_TFRes.rds"))
 
 # Load SCENIC+ eRegulon metadata
 raw_eRegulon_meta.df <- readRDS(paste0(DATA_DIR, "eRegulon_raw_meta.rds"))
@@ -98,7 +86,7 @@ for (ct in names(go_raw.l)) {
     theme(
       plot.title = element_text(face="bold", hjust = 0.5)
     )
-  ggsave(filename = paste0(FIG_DIR, "03.CTeGRN_Filter_GO/GO_BP_", ct, ".pdf"), 
+  ggsave(filename = paste0(FIG_DIR, "GO_BP_", ct, ".pdf"), 
          plot = p, width = 6, height = 10)
 }
 
