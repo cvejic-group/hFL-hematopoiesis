@@ -1,6 +1,6 @@
-#################################################
-### SCENIC+ results: Cell Type Specific eGRNs ###
-#################################################
+############################################
+### eRegulon activity across development ###
+############################################
 
 ###-------------------Note-------------------###
 ###-------      Run with R-4.4.2      -------###
@@ -11,12 +11,12 @@
 ##################
 
 # Set PATH
-setwd("/work/Local_Data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/05.SCENICplus_DevReg")
-WORK_DIR = "/work/Local_Data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/05.SCENICplus_DevReg"
+setwd("~/work/")
+WORK_DIR = "~/work/"
 DATA_DIR = paste0(WORK_DIR, "data/")
 RES_DIR = paste0(WORK_DIR, "results/")
 FIG_DIR = paste0(WORK_DIR, "plots/")
-SCP_RES="~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/"
+SCP_RES="~/work/tmp_data/"
 
 # Load essential packages
 library(tidyverse)
