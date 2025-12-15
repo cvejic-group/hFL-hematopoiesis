@@ -10,7 +10,7 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Load additional packages
@@ -34,7 +34,7 @@ library(furrr)
 #################
 
 # snRNA-seq data
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20251014.rds")
+FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat_20251014.rds")
 ## Cell Metadata
 cell_metadata <- FL.SeuratObj@meta.data
 
@@ -52,7 +52,7 @@ RSS_BA.z <- RSS_mat.l$RSS_BA.z
 ############################
 
 # Get eRegulon & TFs
-# Bascially  
+# Order based on RSS scores
 N_TOP=50
 top_eReg.v <- c()
 for (i in 1:nrow(RSS_BA.z)) {
@@ -83,15 +83,13 @@ TF_EXPR.m <- GetAssayData(seurat_TOP_TF, layer = "data")
 # Load AUCell scores
 ## AUC score gene
 library(hdf5r)
-h5file <- H5File$new("~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/AllRegion_DAR_direct_gene_based_AUC.h5", mode = "r")
-# h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_direct_gene_based_AUC.h5"), mode = "r")
+h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_direct_gene_based_AUC.h5"), mode = "r")
 group <- h5file[["direct_gene_based_AUC"]]
 row_names <- group[["axis0"]]$read()
 col_names <- group[["axis1"]]$read()
 auc_mat <- group[["block0_values"]]$read()
 dimnames(auc_mat) <- list(row_names, col_names)
-h5file2 <- H5File$new("~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/AllRegion_DAR_extended_gene_based_AUC.h5", mode = "r")
-# h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_extended_gene_based_AUC.h5"), mode = "r")
+h5file2 <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_extended_gene_based_AUC.h5"), mode = "r")
 group2 <- h5file2[["extended_gene_based_AUC"]]
 row_names2 <- group2[["axis0"]]$read()
 col_names2 <- group2[["axis1"]]$read()
@@ -102,15 +100,13 @@ AUC_gene.m <- rbind(auc_mat, auc_mat2)[c(TOP_GENEeREG) , rownames(cell_metadata)
 AUC_GENE.m <- AUC_gene.m
 rownames(AUC_GENE.m) <- TOP_TF
 ## AUC score region
-h5file <- H5File$new("~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/AllRegion_DAR_direct_region_based_AUC.h5", mode = "r")
-# h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_direct_region_based_AUC.h5"), mode = "r")
+h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_direct_region_based_AUC.h5"), mode = "r")
 group <- h5file[["direct_region_based_AUC"]]
 row_names <- group[["axis0"]]$read()
 col_names <- group[["axis1"]]$read()
 auc_mat <- group[["block0_values"]]$read()
 dimnames(auc_mat) <- list(row_names, col_names)
-h5file2 <- H5File$new("~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/AllRegion_DAR_extended_region_based_AUC.h5", mode = "r")
-# h5file <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_extended_region_based_AUC.h5"), mode = "r")
+h5file2 <- H5File$new(paste0(DATA_DIR, "AllRegion_DAR_extended_region_based_AUC.h5"), mode = "r")
 group2 <- h5file2[["extended_region_based_AUC"]]
 row_names2 <- group2[["axis0"]]$read()
 col_names2 <- group2[["axis1"]]$read()
@@ -127,7 +123,7 @@ saveRDS(list(TF_EXPR.m = TF_EXPR.m,
              AUC_GENE.m = AUC_GENE.m,
              AUC_region.m = AUC_region.m,
              AUC_REGION.m = AUC_REGION.m), 
-        file = paste0(RES_DIR, "eRegulons_AUCell/TOPeReg_TF_AUCell_mat.rds"))
+        file = paste0(RES_DIR, "TOPeReg_TF_AUCell_mat.rds"))
 
 ##################################################
 ### Training XGBoost for CT TFs identification ###
@@ -135,18 +131,6 @@ saveRDS(list(TF_EXPR.m = TF_EXPR.m,
 
 # Function setting
 source(paste0(WORK_DIR, "00.XGBoost_RMT_fun.R"))
-
-# # Get RSS candidate eRegulons
-# N_TOP = 80
-# top_eRegulon.l <- list()
-# for (i in CT_ORDER) {
-#   top_eRegulon.l[[i]] <-
-#     colnames(RSS_BA)[order(RSS_BA[i,], decreasing = T)][1:N_TOP] %>% 
-#     strsplit(., '_') %>% 
-#     lapply(function(x) return(x[1])) %>%
-#     unlist() %>% 
-#     intersect(., rownames(TF_EXPR.m))
-# }
 
 # Train XGBoost Model & Selection
 train_TF_target.o <- train_OVR_models_targetCT(t(TF_EXPR.m),
@@ -166,50 +150,12 @@ train_TF_target.o <- train_OVR_models_targetCT(t(TF_EXPR.m),
                                                parallel = TRUE,
                                                n_workers = 3, 
                                                nthread_xgb = 15)
-# train_AUC_GENE_target.o <- train_OVR_models_targetCT(t(AUC_GENE.m),
-#                                                      cell_types = cell_metadata$anno_wnn_v51,
-#                                                      model_type = "xgboost",
-#                                                      nfold = 5,
-#                                                      nrounds = 500,
-#                                                      max_depth = 3,
-#                                                      shap_ratio_cutoff = 2,
-#                                                      shap_ratio_diff_cutoff = -Inf,
-#                                                      seed = 123,
-#                                                      do_zscore = TRUE,
-#                                                      do_MinMax = TRUE,
-#                                                      balance_classes = TRUE,
-#                                                      n_iter = 30,
-#                                                      parallel = TRUE,
-#                                                      n_workers = 3, 
-#                                                      nthread_xgb = 15)
-# train_AUC_REGION_target.o <- train_OVR_models_targetCT(t(AUC_REGION.m),
-#                                                        cell_types = cell_metadata$anno_wnn_v51,
-#                                                        model_type = "xgboost",
-#                                                        nfold = 5,
-#                                                        nrounds = 500,
-#                                                        max_depth = 3,
-#                                                        shap_ratio_cutoff = 2,
-#                                                        shap_ratio_diff_cutoff = -Inf,
-#                                                        seed = 123,
-#                                                        do_zscore = TRUE,
-#                                                        do_MinMax = TRUE,
-#                                                        balance_classes = TRUE,
-#                                                        n_iter = 30,
-#                                                        parallel = TRUE,
-#                                                        n_workers = 3, 
-#                                                        nthread_xgb = 15)
-
-
-# Save Res
-# saveRDS(list(train_TF_target.o = train_TF_target.o,
-#              train_AUC_GENE_target.o = train_AUC_GENE_target.o,
-#              train_AUC_REGION_target.o = train_AUC_REGION_target.o),
-#         file = paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_Res.rds"))
+# Save results
 saveRDS(train_TF_target.o,
-        file = paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes.rds"))
+        file = paste0(RES_DIR, "XGBoost_RMT_TFRes.rds"))
 
 # Update selected feature ranks
-XGBoost_RMT_TFRes.l <- readRDS(paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes.rds"))
+XGBoost_RMT_TFRes.l <- readRDS(paste0(RES_DIR, "XGBoost_RMT_TFRes.rds"))
 for (i in 1:length(XGBoost_RMT_TFRes.l)) {
   tmp <- XGBoost_RMT_TFRes.l[[i]]
   shap.df <- tmp$shap
@@ -218,4 +164,4 @@ for (i in 1:length(XGBoost_RMT_TFRes.l)) {
   XGBoost_RMT_TFRes.l[[i]] <- tmp
 }
 saveRDS(XGBoost_RMT_TFRes.l,
-        file = paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes_wRankedFeature.rds"))
+        file = paste0(RES_DIR, "XGBoost_RMT_TFRes_wRankedFeature.rds"))

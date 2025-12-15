@@ -24,13 +24,13 @@ library(ArchR)
 # Load CT-eRegulons info
 CT_eReg_XGBoost_RMT.df <- readRDS(paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes.rds"))
 
-# Form CT-eRegulons list
+# Convert to CT-eRegulons list
 CT_eRegulon.l <- list()
 CT_eReg.df <- CT_eReg_XGBoost_RMT.df
 for (CT in CT_ORDER) {
-  ### Add MAZ for Transient population
+  ### Add MAZ to all Transient population
   if (CT %in% c("MEMP-t", "MastP-t", "MDP", "LMPP", "LP", "Cycling-LP")) {
-    CT_eRegulon.l[[CT]] <- union(CT_eReg.df[[CT]]$confident_features, c("MAZ", "CHURC1", "CEBPZ"))
+    CT_eRegulon.l[[CT]] <- union(CT_eReg.df[[CT]]$confident_features, c("MAZ"))
   } else {
     CT_eRegulon.l[[CT]] <- CT_eReg.df[[CT]]$confident_features 
   }
@@ -95,7 +95,7 @@ for (CT in CT_ORDER) {
                          label_all = TRUE)
   
   ggsave(
-    filename = paste0(FIG_DIR, "02.CTeGRN_Filter_XGBoost_RMT/SHAP_rank_plots/", 
+    filename = paste0(FIG_DIR, "SHAP_rank_plots/", 
                       CT, "_SHAP_Rank_plot.pdf"),
     plot = p,
     width = 16,
@@ -200,7 +200,7 @@ marker_df$CellType <- factor(marker_df$CellType,
                              levels = CT_ORDER)
 marker_df$Gene <- factor(marker_df$Gene,
                          levels = gene_order)
-Cairo::CairoPDF(paste0(FIG_DIR, "02.CTeGRN_Filter_XGBoost_RMT/CT_eREG_Mark_heatmap.pdf"), 
+Cairo::CairoPDF(paste0(FIG_DIR, "CT_eREG_Mark_heatmap.pdf"), 
                 width = 48, height = 12, family = "Arial")
 ggplot(df_all, aes(x = CellType, y = Gene)) +
   geom_tile(aes(fill = TF), color = "white") +
@@ -247,7 +247,7 @@ jaccard_index <- function(A, B) {
 jaccard_matrix <- outer(names(CT_eRegulon.l), names(CT_eRegulon.l),
                         Vectorize(function(x, y) jaccard_index(CT_eRegulon.l[[x]], CT_eRegulon.l[[y]])))
 rownames(jaccard_matrix) <- colnames(jaccard_matrix) <- names(CT_eRegulon.l)
-## Clip values
+## Clip values (deprecated)
 jaccard_matrix.m <- jaccard_matrix
 # jaccard_matrix.m[which(jaccard_matrix.m <= 0.15)] <- 0
 
@@ -341,7 +341,7 @@ p_heat <- ggplot(df, aes(x = CellType2, y = CellType1, fill = Jaccard)) +
         plot.title = element_text(face = "bold", hjust = .5, colour = "black", size = 17))
 
 # Combine dendrogram and heatmap
-Cairo::CairoPDF(paste0(FIG_DIR, "02.CTeGRN_Filter_XGBoost_RMT/CT_eGRN_Filter_JI_heatmap_woRED2.pdf"), 
+Cairo::CairoPDF(paste0(FIG_DIR, "CT_eGRN_Filter_JI_heatmap_woRED2.pdf"), 
                 width = 12, height = 11, family = "Arial")
 plot_grid(
   p_dendro, p_heat,
@@ -365,7 +365,7 @@ for(CT in CT_ORDER){
                                                      eGRN_filter_meta_df.l[[CT]]$TF)
 }
 saveRDS(eGRN_filter_meta_df.l, 
-        paste0(RES_DIR, "eRegulons_CT_Filter/CT_eGRN_Filter_Metadata.rds"))
+        paste0(RES_DIR, "CT_eGRN_Filter_Metadata.rds"))
 ### Save to xlsx
 library(openxlsx)
 wb <- createWorkbook()
@@ -373,7 +373,7 @@ for(CT in CT_ORDER){
   addWorksheet(wb, CT)
   writeData(wb, CT, eGRN_filter_meta_df.l[[CT]])
 }
-saveWorkbook(wb, paste0(RES_DIR, "eRegulons_CT_Filter/CT_eGRN_Filter_Metadata.xlsx"), 
+saveWorkbook(wb, paste0(RES_DIR, "CT_eGRN_Filter_Metadata.xlsx"), 
              overwrite = TRUE)
 
 
