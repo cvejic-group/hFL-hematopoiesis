@@ -1,0 +1,2 @@
+# SCENIC+ snakemake pipeline
+# Please follow the original tutorial on: https://scenicplus.readthedocs.io/en/stable/index.html
