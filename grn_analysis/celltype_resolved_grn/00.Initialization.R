@@ -11,12 +11,12 @@
 ##################
 
 # Set PATH
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
-WORK_DIR = "~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN//"
+setwd("~/work/")
+WORK_DIR = "~/work/"
 DATA_DIR = paste0(WORK_DIR, "data/")
 RES_DIR = paste0(WORK_DIR, "results/")
 FIG_DIR = paste0(WORK_DIR, "plots/")
-SCP_RES="~/local_data/proj/Dev_Multiome/04.regulome/scp_ALL_pcw/lumi_outs/tmp_data/"
+SCP_RES="~/work/tmp_data/"
 
 # Load essential packages
 library(tidyverse)

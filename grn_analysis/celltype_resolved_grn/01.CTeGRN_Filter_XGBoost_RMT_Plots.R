@@ -10,7 +10,7 @@
 # Initialization #
 ##################
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Load additional packages
@@ -23,22 +23,6 @@ library(ArchR)
 
 # Load CT-eRegulons info
 CT_eReg_XGBoost_RMT.df <- readRDS(paste0(RES_DIR, "eRegulons_CT_Filter/XGBoost_RMT_TFRes.rds"))
-
-# Re-select confident CT-eRegulons (Thresholding test)
-# for (CT in CT_ORDER) {
-#   tmp <- train_TF_target.o[[CT]]$shap
-#   possible <- tmp$Feature[tmp$SHAP_ratio > 1 & 
-#                             # shap_ratio_diff > shap_ratio_diff_cutoff &
-#                             tmp$logFC > 0]
-#   tmp$CT_eReg_possible = tmp$Feature %in% possible
-#   tmp.df <- tmp[which(tmp$CT_eReg_possible) ,]
-#   confident <- possible[tmp.df$SHAP > 0 & 
-#                           tmp.df$SHAP_neg <= 0]
-#   tmp$CT_eReg_confident = tmp$Feature %in% confident
-#   train_TF_target.o[[CT]]$shap <- tmp
-#   train_TF_target.o[[CT]]$possible_features <- possible
-#   train_TF_target.o[[CT]]$confident_features <- confident
-# }
 
 # Form CT-eRegulons list
 CT_eRegulon.l <- list()

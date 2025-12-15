@@ -6,7 +6,7 @@
 ###-------      Run with R-4.4.2      -------###
 ###------------------------------------------###
 
-setwd("~/local_data/proj/Dev_Multiome/04.regulome_R/01.SCENICplus/04.SCENICplus_CTeGRN/")
+setwd("~/work/")
 source("./00.Initialization.R")
 
 # Dependencies
