@@ -27,7 +27,7 @@ annot2col <- c(
   "cDC2"="#B3DE69",
   "pDC"="#4DAF4A",
   "ASDC"="#CDC673",
-  "LMPP"="#FFF2AE",
+  "LMP"="#FFF2AE",
   "LP"="#FFD92F",
   "Cycling-LP"="#FFFF33",
   "PreProB"="#FFF0F5",
