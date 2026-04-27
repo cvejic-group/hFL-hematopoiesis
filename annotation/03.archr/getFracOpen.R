@@ -39,7 +39,7 @@ not_equivalent <- function(col1=NULL, col2=NULL) {
 
 
 data_dir <- "archr_48FL.eachCell"
-cells <- c("HSC", "MEMP-t", "MastP-t", "MDP", "LMPP", "LP", "Cycling-LP",
+cells <- c("HSC", "MEMP-t", "MastP-t", "MDP", "LMP", "LP", "Cycling-LP",
            "GP", "Granulocyte",
            "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
            "MEMP-MK", "MK", "MastP", "Mast",
@@ -113,7 +113,7 @@ cell_order <- c("HSC", "GP", "Granulocyte",
                 "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                 "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
                 "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-                "LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+                "LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
                 "NK", "ILCP", "T",
                 "Hepatocyte", "Endothelia")
 df_meta = read.csv('/work/DevM_analysis/01.annotation/10.integration_joint_clean/data/FL_wnn_cellmeta.v01.csv') |>

@@ -1,17 +1,20 @@
 
 # Multiomics analysis of fetal liver hematopoiesis
 
-Here are scripts accompanying the manuscript: Temporal and regulatory landscape of human foetal liver haematopoiesis mapped by single-nucleus multiomics
+Here are scripts accompanying the manuscript: Temporal and regulatory landscape of human embryonic and foetal liver haematopoiesis mapped by single-nucleus multiomics
+
+## Data
 
 
-## Contents
+
+## Codebase
 
 Code and scripts used for the custom analyses in the manuscript. These are shared to improve reproducibility of the main results, but the repository is not a complete, standalone workflow.
 
-* preprocess: data processing
+* preprocess: data preprocessing and QC
   * 01.cellranger-arc
   * 02.souporcell
-  * 03.doublets
+  * 03.scDblFinder
   * 04.qc
   * 05.infercnv
 

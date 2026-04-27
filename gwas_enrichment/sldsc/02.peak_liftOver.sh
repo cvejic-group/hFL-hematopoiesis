@@ -7,7 +7,7 @@ peak_dir=$work_dir/atac_peaks
 
 d=FDR5_LFC1_padding_1k
 
-for cell in CTRL HSC GP Granulocyte MEMP-t MEMP MEP MEMP-Mast-Ery MEMP-Ery Early-Ery Late-Ery MEMP-MK MK MastP-t MastP Mast MDP Monocyte Kupffer cDC1 cDC2 pDC ASDC LMPP LP Cycling-LP PreProB ProB-1 ProB-2 Large-PreB Small-PreB IM-B NK ILCP T Hepatocyte Endothelia
+for cell in CTRL HSC GP Granulocyte MEMP-t MEMP MEP MEMP-Mast-Ery MEMP-Ery Early-Ery Late-Ery MEMP-MK MK MastP-t MastP Mast MDP Monocyte Kupffer cDC1 cDC2 pDC ASDC LMP LP Cycling-LP PreProB ProB-1 ProB-2 Large-PreB Small-PreB IM-B NK ILCP T Hepatocyte Endothelia
 do
     # liftover
     liftOver $peak_dir/$d/$cell/${cell}_peak.hg38.bed ~/RefData/ucsc/liftOver/hg38ToHg19.over.chain.gz $peak_dir/$d/$cell/${cell}_peak.hg38ToHg19.bed $peak_dir/$d/$cell/${cell}_peak.hg38ToHg19.unlifted

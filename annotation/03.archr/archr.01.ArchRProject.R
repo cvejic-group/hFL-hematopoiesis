@@ -110,7 +110,7 @@ proj$celltype <- factor(proj$celltype, levels = c("HSC", "35-MDP?", "GP", "Granu
                                                   "49-MEMP", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                                                   "MEMP-MK", "MK", "49:2-MastP", "MastP", "Mast",
                                                   "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-                                                  "LMPP", "LP", "Cycling_LP", "PreProB", "ProB-1", "ProB-2",
+                                                  "LMP", "LP", "Cycling_LP", "PreProB", "ProB-1", "ProB-2",
                                                   "Large-PreB", "Small-PreB", "IM-B",
                                                   "NK", "ILCP", "T",
                                                   "Hepatocyte", "Endothelia"))

@@ -22,7 +22,7 @@ source $tool_dir/anaconda3/bin/activate
 conda activate ldsc
 
 # cluster
-cells=(bigCTRL HSC GP Granulocyte MEMP-t MEMP MEP MEMP-Mast-Ery MEMP-Ery Early-Ery Late-Ery MEMP-MK MK MastP-t MastP Mast MDP Monocyte Kupffer cDC1 cDC2 pDC ASDC LMPP LP Cycling-LP PreProB ProB-1 ProB-2 Large-PreB Small-PreB IM-B NK ILCP T Hepatocyte Endothelia)
+cells=(bigCTRL HSC GP Granulocyte MEMP-t MEMP MEP MEMP-Mast-Ery MEMP-Ery Early-Ery Late-Ery MEMP-MK MK MastP-t MastP Mast MDP Monocyte Kupffer cDC1 cDC2 pDC ASDC LMP LP Cycling-LP PreProB ProB-1 ProB-2 Large-PreB Small-PreB IM-B NK ILCP T Hepatocyte Endothelia)
 
 for d in FDR5_LFC1_padding_1k
 do

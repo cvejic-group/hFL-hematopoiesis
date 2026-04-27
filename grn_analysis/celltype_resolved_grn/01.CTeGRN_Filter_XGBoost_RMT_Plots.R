@@ -29,7 +29,7 @@ CT_eRegulon.l <- list()
 CT_eReg.df <- CT_eReg_XGBoost_RMT.df
 for (CT in CT_ORDER) {
   ### Add MAZ to all Transient population
-  if (CT %in% c("MEMP-t", "MastP-t", "MDP", "LMPP", "LP", "Cycling-LP")) {
+  if (CT %in% c("MEMP-t", "MastP-t", "MDP", "LMP", "LP", "Cycling-LP")) {
     CT_eRegulon.l[[CT]] <- union(CT_eReg.df[[CT]]$confident_features, c("MAZ"))
   } else {
     CT_eRegulon.l[[CT]] <- CT_eReg.df[[CT]]$confident_features 

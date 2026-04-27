@@ -38,7 +38,7 @@ srat$anno_wnn_v5 <- factor(srat$anno_wnn_v5, levels = c("HSC", "35-MDP?", "GP", 
                   "49-MEMP", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                   "MEMP-MK", "MK", "49:2-MastP", "MastP", "Mast",
                   "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-                  "LMPP", "LP", "Cycling_LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+                  "LMP", "LP", "Cycling_LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
                   "NK", "ILCP", "T",
                   "Hepatocyte", "Endothelia"))
 table(srat$anno_wnn_v5, useNA = "ifany")

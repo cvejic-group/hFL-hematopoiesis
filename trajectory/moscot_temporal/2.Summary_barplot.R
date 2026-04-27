@@ -58,7 +58,7 @@ annot2col <- c("HSC" = "#E41A1C",
                "cDC2" = "#ADFF2F",
                "pDC" = "#4DAF4A",
                "ASDC" = "#CDC673",
-               "LMPP" = "#FFF2AE",
+               "LMP" = "#FFF2AE",
                "LP" = "#FFD92F",
                "Cycling-LP" = "#FFFF33",
                "PreProB" = "#FFF0F5",
@@ -173,7 +173,7 @@ for(direction in c("forward", "backward")){
   p2 <- plot(c("Granulocyte", "MK", "MastP-t", "MastP", "Mast", "MDP", "Monocyte", 
                "Kupffer", "cDC1", "cDC2", "pDC", "ASDC"), 
              min_value = 0.02)
-  p3 <- plot(c("LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", 
+  p3 <- plot(c("LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", 
                "Large-PreB",  "Small-PreB", "IM-B", "NK", "T", "ILCP"),
              min_value = 0.02, leg.pos = "bottom")
   leg <- ggpubr::get_legend(p3)
@@ -186,7 +186,7 @@ for(direction in c("forward", "backward")){
   p2 <- plot(c("MEMP-Mast", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery", "MEMP-MK", "MK"),min_value = 0.02)
   p3 <- plot(c("MastP-t", "MastP", "Mast", "Monocyte", "Kupffer"),min_value = 0.02)
   p4 <- plot(c("MDP", "cDC1", "cDC2", "pDC", "ASDC"), min_value = 0.02)
-  p5 <- plot(c("LMPP", "LP", "Cycling-LP", "PreProB"), min_value = 0.02)
+  p5 <- plot(c("LMP", "LP", "Cycling-LP", "PreProB"), min_value = 0.02)
   p6 <- plot(c("ProB-1", "ProB-2", "Large-PreB",  "Small-PreB", "IM-B", "NK", "T", "ILCP"), min_value = 0.02)
   
   ggsave(plot = gridExtra::grid.arrange(p1,p2,p3, p4,p5,p6, ncol = 1),

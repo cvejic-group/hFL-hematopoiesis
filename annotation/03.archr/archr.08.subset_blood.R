@@ -27,7 +27,7 @@ proj <- loadArchRProject(path = here::here('output', "archr_48FL.slim"))
 proj
 
 # sub blood
-idxCell <- BiocGenerics::which(proj$celltype %in% c("HSC", "MEMP-t", "MastP-t", "MDP", "LMPP", "LP", "Cycling-LP",
+idxCell <- BiocGenerics::which(proj$celltype %in% c("HSC", "MEMP-t", "MastP-t", "MDP", "LMP", "LP", "Cycling-LP",
                                                     "GP", "Granulocyte",
                                                     "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                                                     "MEMP-MK", "MK", "MastP", "Mast",

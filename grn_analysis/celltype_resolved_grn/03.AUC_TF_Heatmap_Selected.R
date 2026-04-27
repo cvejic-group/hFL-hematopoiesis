@@ -43,7 +43,7 @@ CT.keep <- intersect(
 CT.keep <- c("HSC", "GP",
              "MEMP-t", "MastP-t",
              "MDP",
-             "LMPP", "LP", "Cycling-LP", "PreProB")
+             "LMP", "LP", "Cycling-LP", "PreProB")
 FL.subset.SeuratObj <- subset(FL.subset.SeuratObj, 
                               subset = celltype_latest %in% CT.keep)
 ### TF selections

@@ -58,7 +58,7 @@ cellmeta$anno_wnn_v51 <- factor(cellmeta$anno_wnn_v51, levels = c("HSC", "GP", "
                                                           "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
                                                           "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
                                                           "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-                                                          "LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+                                                          "LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
                                                           "NK", "ILCP", "T",
                                                           "Hepatocyte", "Endothelia"))
 

@@ -41,7 +41,7 @@ cells <- c("GP", "Granulocyte",
            "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
            "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
            "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
-           "LMPP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+           "LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
            "NK", "ILCP", "T")
 tmp_lst <- lapply(cells, function(i){get_stats(input_cell = i)})
 df <- do.call(rbind, tmp_lst)
