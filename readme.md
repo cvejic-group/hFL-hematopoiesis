@@ -5,7 +5,7 @@ Here are scripts accompanying the manuscript: Temporal and regulatory landscape 
 
 ## Codebase
 
-Code and scripts used for the custom analyses in the manuscript. These are shared to improve reproducibility of the main results, but the repository is not a complete, standalone workflow.
+Code and scripts used for the custom analyses in the manuscript. These are shared to improve reproducibility of the main results, but the repository is not a complete, standalone workflow. Please see each sub-folder for more details.
 
 * preprocess: data preprocessing and QC
   * 01.cellranger-arc
@@ -46,7 +46,7 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * sldsc
   * magama
 
-* DNAm: DNA methylation
+* DNAm: DNA methylation data analysis
 
 * tf_footprinting: TF footprint identification with ChromBPNet, TF-MoDISCo, and Fi-NeMo
   * [chrombpnet-smk-pipeline](https://github.com/cvejic-group/chrombpnet-smk-devmult)
@@ -65,5 +65,7 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * cNMF
   * bam_frag_per_cell
 
-* utils
+* utils: small utilities, color palette
+
+
 
