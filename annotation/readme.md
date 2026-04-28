@@ -1,5 +1,13 @@
+## About
 
+This folder collects multi-modal annotation, integration, and regulatory annotation workflows for fetal liver multiome data.
 
+## Contents
+
+- `01.wnn_anno`: RNA and ATAC preprocessing, joint WNN integration, iterative manual annotation, and cleaned joint dataset export.
+- `02.multivi`: MultiVI model preparation, training, and visualization for joint RNA+ATAC integration across all PCWs.
+- `03.archr`: ArchR-based ATAC annotation, peak calling, motif enrichment, peak-to-gene linking, and export utilities.
+- `04.scavenge`: SCAVENGE GWAS trait relevance score workflows and ArchR-to-SummarizedExperiment export.
 
 
 ## Key compute environment
@@ -59,5 +67,4 @@ loaded via a namespace (and not attached):
 [71] tzdb_0.4.0               rmarkdown_2.27           urlchecker_1.0.1         callr_3.7.6              git2r_0.33.0            
 [76] digest_0.6.36            xtable_1.8-4             httpuv_1.6.15            munsell_0.5.1            sessioninfo_1.2.2
 ```
-
 
