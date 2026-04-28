@@ -3,10 +3,6 @@
 
 Here are scripts accompanying the manuscript: Temporal and regulatory landscape of human embryonic and foetal liver haematopoiesis mapped by single-nucleus multiomics
 
-## Data
-
-
-
 ## Codebase
 
 Code and scripts used for the custom analyses in the manuscript. These are shared to improve reproducibility of the main results, but the repository is not a complete, standalone workflow.
@@ -70,5 +66,4 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * bam_frag_per_cell
 
 * utils
-
 

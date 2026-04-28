@@ -1,26 +1,24 @@
 #/usr/bin/env Rscript
 
 # R432
-# cd /work/home/project/20231127_DevM/devm_r432
-# nohup Rscript code/HSC.dev_da_lmm_mc_scale.R > logs/HSC.dev_da_lmm_mc_scale.log &
 
 library(tidyverse)
 library(Seurat)
 library(Matrix)
 source("/work/home/software/SKM_ageing_atlas/DE_analysis/LMM.R")
 
-DOCNAME <- "HSC.dev_da_lmm_mc_scale"
+DOCNAME <- "HSC.dev_da_lmm_metacell"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
 
 # load mdata
-mdata <- qs::qread(here::here("output", "HSC.metacell", "mc_mdata.qs")) |>
+mdata <- qs::qread(here::here("output", "HSC.prep_temporal", "mc_mdata.qs")) |>
   mutate(PCWsca = as.numeric(scale(as.integer(as.character(PCW))))) |>
   droplevels() |>
   as.data.frame()
 str(mdata)
 
 # peak mat
-Y_scale <- qs::qread(here::here("output", "HSC.metacell", "mc_pm_scale.qs"))
+Y_scale <- qs::qread(here::here("output", "HSC.prep_temporal", "mc_pm_scale.qs"))
 stopifnot(all(colnames(Y_scale) == mdata$mc_group))
 
 # linear mixed model

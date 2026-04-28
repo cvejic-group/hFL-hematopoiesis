@@ -1,10 +1,8 @@
 #!/usr/bin/env Rscript
 
 # R432
-# cd /work/home/project/20231127_DevM/devm_r432
-# nohup Rscript code/HSC.metacell.R > logs/HSC.metacell.log &
 
-DOCNAME <- "HSC.metacell"
+DOCNAME <- "HSC.prep_temporal"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
 
 library(tidyverse)
@@ -199,26 +197,3 @@ qs::qsave(gm_scale, file = here::here("output", DOCNAME, "gm_scale.qs"))
 
 sessionInfo()
 Sys.Date()
-
-# olp with CD34+ HSPC H3K27ac
-#27930/149451
-#27383/126611
-#24125/74167
-
-# olp with scE2G elements
-#63804/149451
-#61737/126611
-#49365/74167
-
-# olp with either
-#69798/149451
-#67258/126611
-#52741/74167
-
-
-# scE2G elements to here
-#45049/50129
-#43275/50129
-#34447/50129
-
-

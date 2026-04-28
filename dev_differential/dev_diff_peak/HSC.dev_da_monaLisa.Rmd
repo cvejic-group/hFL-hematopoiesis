@@ -1,8 +1,8 @@
 ---
-title: "HSC.dev_da_mcScale_monaLisa"
+title: "HSC.dev_da_monaLisa"
 ---
 
-- Run `HSC.dev_da_mcScale.R` first
+- Run `HSC.dev_da_metacell.R` first
 
 ```{r knitr, include = FALSE}
 DOCNAME <- "HSC.dev_da_mcScale_monaLisa"
@@ -91,7 +91,7 @@ source("/work/DevM_analysis/utils/colors.R")
 DA res dir
 
 ```{r}
-da_res_dir <- "HSC.dev_da_lmm_mc_scale"
+da_res_dir <- "HSC.dev_da_lmm_metacell"
 ```
 
 All peaks

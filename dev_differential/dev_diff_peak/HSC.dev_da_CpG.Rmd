@@ -1,9 +1,9 @@
 ---
-title: "HSC.dev_da_mc_CpG"
+title: "HSC.dev_da_CpG"
 ---
 
 ```{r knitr, include = FALSE}
-DOCNAME <- "HSC.dev_da_mc_CpG"
+DOCNAME <- "HSC.dev_da_CpG"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
 
 NOW <- Sys.time()
@@ -84,7 +84,7 @@ source("/work/DevM_analysis/utils/colors.R")
 LMM res
 
 ```{r}
-output_name <- "HSC.dev_da_lmm_mc_scale"
+output_name <- "HSC.dev_da_lmm_metacell"
 
 df_res <- readRDS(here::here("output", output_name, "HSC_dev_da_lmm_df.rds")) |> 
   dplyr::rename(peak = gene) |> 
@@ -106,7 +106,7 @@ peak_all <- ChIPseeker::readPeakFile(here::here("output", output_name, "HSC_dev_
 Anno of the peaks tested
 
 ```{r}
-peakAnnoAll <- readRDS(here::here("output", "HSC.dev_da_mcScale", "HSC_dev_da.peak_all_anno.rds"))
+peakAnnoAll <- readRDS(here::here("output", "HSC.dev_da_metacell", "HSC_dev_da.peak_all_anno.rds"))
 peak_anno <- as.data.frame(peakAnnoAll@anno) |> 
   mutate(
     anno = case_when(

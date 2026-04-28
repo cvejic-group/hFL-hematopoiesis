@@ -12,7 +12,7 @@ DOCNAME <- "HSC.dev_de_lmm"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
 
 # load mdata
-mdata <- qs::qread(here::here("output", "HSC.metacell", "mdata.qs")) |>
+mdata <- qs::qread(here::here("output", "HSC.prep_temporal", "mdata.qs")) |>
   mutate(logUMI = log(nCount_RNA),
          logFeature = log(nFeature_RNA),
          PCWsca = as.numeric(scale(as.integer(as.character(PCW))))) |>
@@ -21,7 +21,7 @@ mdata <- qs::qread(here::here("output", "HSC.metacell", "mdata.qs")) |>
 str(mdata)
 
 # gene mat
-Y <- qs::qread(here::here("output", "HSC.metacell", "gm_scale.qs"))
+Y <- qs::qread(here::here("output", "HSC.prep_temporal", "gm_scale.qs"))
 dim(Y)
 stopifnot(all(colnames(Y) == rownames(mdata)))
 

@@ -98,30 +98,30 @@ table(srat$PCW, useNA = "ifany")
 LMM res
 
 ```{r}
-df_res <- readRDS(here::here("output", "HSC.dev_da_mc_CpG", "HSC_dev_da_peak_CGcontent_anno.rds"))
+df_res <- readRDS(here::here("output", "HSC.dev_da_CpG", "HSC_dev_da_peak_CGcontent_anno.rds"))
 head(df_res)
 ```
 
 monaLisa TF enrich
 
 ```{r}
-se <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "se.rds"))
-se_df <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "HSC_DA_peak_monaLisa_sig_TF.rds"))
-seSel <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "seSel.rds"))
+se <- readRDS(here::here("output", "HSC.dev_da_monaLisa", "se.rds"))
+se_df <- readRDS(here::here("output", "HSC.dev_da_monaLisa", "HSC_DA_peak_monaLisa_sig_TF.rds"))
+seSel <- readRDS(here::here("output", "HSC.dev_da_monaLisa", "seSel.rds"))
 seSel
 ```
 
 monaLisa TF enrich, proximal/distal
 
 ```{r}
-se2 <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "se.sep_proximal_distal_limitedTF.rds"))
+se2 <- readRDS(here::here("output", "HSC.dev_da_monaLisa", "se.sep_proximal_distal_limitedTF.rds"))
 se2
 ```
 
 TF motif 2 gene name
 
 ```{r}
-df_motif2gene <- readRDS(here::here("output", "HSC.dev_da_mcScale_monaLisa", "df_motif2gene.rds"))
+df_motif2gene <- readRDS(here::here("output", "HSC.dev_da_monaLisa", "df_motif2gene.rds"))
 tf_genes <- unique(c(df_motif2gene$tf1, df_motif2gene$tf2))
 length(tf_genes)
 tf_genes

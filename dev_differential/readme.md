@@ -1,0 +1,30 @@
+# About
+
+This folder contains code for developmental differential analysis of HSCs using linear mixed models (LMM) on both chromatin accessibility and gene expression.
+
+## Overview
+
+- `LMM.R`: core LMM implementation adapted from the [SKM_ageing_atlas](https://github.com/Teichlab/SKM_ageing_atlas) repository.
+
+- `HSC.prep_temporal.R`: prepares input matrices and metadata for temporal analysis, including metacell aggregation and Seurat normalization/scaling.
+
+- `dev_diff_gene`: gene-level developmental differential expression analysis.
+  - `HSC.dev_de_lmm.R`: core script
+  - `HSC.dev_de_lmm.Rmd`: functional enrichment and visualization
+  - `HSC.dev_de_plot.Rmd`: visualization
+
+- `dev_diff_peak`: peak-level differential accessibility analysis, metacell-level modeling, and TF motif enrichment.
+  - `HSC.dev_da_metacell.R`: core script
+  - `HSC.dev_da_metacell.Rmd`: peak annotation, functional enrichment and visualization
+  - `HSC.dev_da_CpG.Rmd`: GC content check of differential peaks
+  - `HSC.dev_da_monaLisa.Rmd`: TF motif enrichment
+  - `HSC.dev_da_plot.Rmd`: visualization
+
+## Notes
+
+- The analysis workflow is based on LMMs for both chromatin accessibility and gene expression, with explicit control for effects of library, donor, sex, and batch etc.
+
+- Peak-level modeling is performed on **metacells** to reduce sparsity and improve statistical power.
+
+- Motif enrichment is derived from binned peak effect sizes and filtered for strong significance and biological support.
+
