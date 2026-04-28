@@ -1,6 +1,6 @@
 # About
 
-This folder contains code for developmental differential analysis of HSCs using linear mixed models (LMM) on both chromatin accessibility and gene expression.
+This folder contains code for developmental differential analysis of HSCs using linear mixed models (LMM) on both chromatin accessibility and gene expression. The LMM method was first described by [(Young et al. 2021)](https://www.nature.com/articles/s41588-021-00875-2) and also employed by other publications.
 
 ## Overview
 
