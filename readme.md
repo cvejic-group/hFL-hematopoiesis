@@ -53,17 +53,17 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * postprocess
   * analysis
 
-* query_mapping: Mapping FL HSC to AGM data from Calvanese et al. 2022 Nature paper
+* query_mapping: Mapping FL HSC to AGM data from [Calvanese et al. 2022, Nature](https://www.nature.com/articles/s41586-022-04571-x)
 
-* grn_analysis: Gene Regulatory Network analysis with SCENIC+ and XGBoost model
+* grn_analysis: gene regulatory network (GRN) analysis with SCENIC+ and XGBoost model
   * scenicplus
   * celltype_resolved_grn
   * dev_diff_eRegulon: developmental effects on SCENIC+ eRegulons
 
 * misc
-  * variancePartition
-  * cNMF
-  * bam_frag_per_cell
+  * variancePartition: variance partition analysis
+  * cNMF: consensus non-negative matrix factorization
+  * bam_frag_per_cell: generate BAM/fragment files for each cell type
 
 * utils: small utilities, color palette
 

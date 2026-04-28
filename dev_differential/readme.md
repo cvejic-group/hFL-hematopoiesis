@@ -4,7 +4,7 @@ This folder contains code for developmental differential analysis of HSCs using 
 
 The LMM method was first described by [Young et al. 2021](https://www.nature.com/articles/s41588-021-00875-2) and also employed by other studies. Statistical significance was estimated by local true sign rate (LTSR). Please find more details in the Supplementary Notes of [Young et al. 2021](https://www.nature.com/articles/s41588-021-00875-2).
 
-## Overview
+## Contents
 
 - `LMM.R`: core LMM implementation adapted from the [SKM_ageing_atlas](https://github.com/Teichlab/SKM_ageing_atlas) repository.
 
