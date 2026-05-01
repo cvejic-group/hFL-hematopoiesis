@@ -101,7 +101,7 @@ source("/work/DevM_analysis/utils/colors.R")
 HSC PG links
 
 ```{r}
-df_pg <- readRDS(here::here("output", "HSC.glmmPG", "HSC.glmmPG_FDR20.rds")) |>
+df_pg <- readRDS(here::here("output", "HSC.lmmPG", "HSC.lmmPG_FDR20.rds")) |>
   dplyr::select(peak, gene) |>
   group_by(peak) |>
   summarise(
