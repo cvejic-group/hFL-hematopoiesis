@@ -16,8 +16,8 @@ filtering and pruning strategy on top of it.
 ```
                    ┌──────────────────────────────────────────────┐
    upstream        │  SCENIC+ (v1.0a1) + pycisTopic + pycistarget │
-   (not in this    │  + GRNBoost2  →  317 high-confidence         │
-    folder)        │  eRegulons (TF–region–gene triplets, +/+,    │
+                   │  + GRNBoost2  →  317 high-confidence         │
+                   │  eRegulons (TF–region–gene triplets, +/+,    │
                    │  +/-, -/+, -/-)                              │
                    └──────────────┬───────────────────────────────┘
                                   │
