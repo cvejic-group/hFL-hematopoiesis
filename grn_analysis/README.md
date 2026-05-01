@@ -6,7 +6,6 @@
 *"Cross-cell-type differential target analysis of CT-eRegulons"* sections in Methods.
 
 ---
-## Detailed explaination for **cell type-resolved eRegulons (CT-eRegulons) construction**
 
 ## Detailed explaination for how `celltype_resolved_grn` folder relates to the SCENIC+ pipeline
 
