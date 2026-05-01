@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # run
-# nohup Rscript code/08.ChromVAR_DMR.R
+# nohup Rscript code/07.ChromVAR_DMR.R
 
 DOCNAME <- "archr_48FL.8to18"
 
