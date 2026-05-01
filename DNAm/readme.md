@@ -14,7 +14,7 @@ The pipeline starts from Nanopore methylation calls generated with Dorado and th
 - `05.get_atac_pb_by_donor.R`: generates donor-level pseudobulk ATAC peak matrices from ArchR.
 - `05.get_rna_pb_by_donor.R`: generates donor-level pseudobulk gene expression matrices from Seurat.
 - `06.DSS.R` / `06.DSS.Rmd`: fits DSS models and calls DMRs while accounting for PCW, sex, and Nanopore batch.
-- `07.DMR.olp_HSC_devDA_peaks.Rmd`: integrates DMRs with HSC differential accessibility peaks and performs overlap analyses.
-- `08.ChromVAR_DMR.R` / `08.ChromVAR_DMR.Rmd`: evaluates ChromVAR accessibility scores for hyper- and hypomethylated DMRs in FL HSCs.
+- `07.ChromVAR_DMR.R` / `07.ChromVAR_DMR.Rmd`: evaluates ChromVAR accessibility scores for hyper- and hypomethylated DMRs in FL HSCs.
+- `08.DMR.olp_HSC_devDA_peaks.Rmd`: integrates DMRs with HSC differential accessibility peaks and performs overlap analyses.
 - `DNAm.plot.Rmd`: creates summary visualizations of methylation PCA, chromatin state relationships, and DMR enrichments.
 
