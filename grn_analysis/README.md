@@ -57,9 +57,9 @@ The scripts here do not modify any of those upstream objects.
 4. **DAR-based pruning**: drop target regions of an eRegulon that are
    not differentially accessible in the focal cell type, drop genes linked
    only through those regions, and discard CT-eRegulons that lose >90% of
-   targets and are left with <5 genes.
-5. **Cross-cell-type Jaccard analysis** of pruned target sets, plus
-   **Walktrap module detection** on the resulting weighted Jaccard similarity network.
+   targets and are left with <5 genes → pruned CT-eRegulons.
+5. **Cross-cell-type Jaccard analysis** of the pruned CT-eRegulons, plus
+   **Walktrap module detection** on the resulting Jaccard similarity network.
 
 ---
 
