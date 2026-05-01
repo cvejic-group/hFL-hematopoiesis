@@ -1,6 +1,5 @@
 # SCENIC+ analysis and Cell type-resolved eRegulon (CT-eRegulon) construction
 
-This folder contains the code that:
 - `scenicplus`: Run **SCENIC+** pipeline with **pycisTopic_polars_1xx** version
 - `celltype_resolved_grn`: Convert the **raw SCENIC+ eRegulon set** into
 **cell type-resolved eRegulons (CT-eRegulons)**. It corresponds to the *"Cell type-resolved eRegulon construction"* and
