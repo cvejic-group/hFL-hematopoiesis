@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/1081882728.svg)](https://doi.org/10.5281/zenodo.20024863)
 
 # Multiomics analysis of fetal liver hematopoiesis
 
