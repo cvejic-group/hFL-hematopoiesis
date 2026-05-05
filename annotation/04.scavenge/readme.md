@@ -7,7 +7,7 @@ which is computed in [`03.archr/archr.02.addUMAP.R`](03.archr/archr.02.addUMAP.R
 Briefly, the LSI embedding was generated using `addIterativeLSI(...)` with 2 iterations, 25K variable features, 30 dimensions, and a `corCutOff` of 0.5. 
 This was then followed by `addHarmony(...)` on this layer, using the same `corCutOff` and grouping by `libraryID` and `donorID`.
 
-The resulting `SummarizedExperiment` object is then used in the **cvejic-group/scavenge-smk-devmult** pipeline to compute the SCAVENGE metrics (TRS, enrichment).
+The resulting `SummarizedExperiment` object is then used in the [**cvejic-group/scavenge-smk-devmult**](https://github.com/cvejic-group/scavenge-smk-devmult) pipeline to compute the SCAVENGE metrics (TRS, enrichment).
 
 The `SummarizedExperiment` object and the per cell TRS results are used in the [`analysis/sfig3b-scavenge-baseline-trait-set.Rmd`](04.scavenge/analysis/sfig3b-scavenge-baseline-trait-set.Rmd) script to the summary figure.
 The script specifically used the pipeline output `results/trs/df_trs_scavenge_yu_2022_knn30_bg200_rng20241106.csv.gz`.
