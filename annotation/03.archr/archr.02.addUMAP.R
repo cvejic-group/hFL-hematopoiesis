@@ -40,25 +40,6 @@ proj <- addIterativeLSI(
   force = TRUE
 )
 
-# LSI - RNA
-proj <- addIterativeLSI(
-  ArchRProj = proj,
-  useMatrix = "GeneExpressionMatrix",
-  depthCol = "Gex_nUMI",
-  name = "LSI_RNA",
-  iterations = 2, # default
-  varFeatures = 2500,
-  firstSelection = "variable",
-  dimsToUse = 1:30, # not sure if it's enough
-  binarize = FALSE,
-  corCutOff = corCutOff,
-  force = TRUE
-)
-
-# Combined Dims
-proj <- addCombinedDims(proj, reducedDims = c("LSI_ATAC", "LSI_RNA"),
-                        name =  "LSI_Combined", corCutOff = corCutOff)
-
 # harmony based on ATAC
 proj <- addHarmony(
   ArchRProj = proj,
@@ -69,26 +50,9 @@ proj <- addHarmony(
   force = TRUE
 )
 
-# harmony based on both
-proj <- addHarmony(
-  ArchRProj = proj,
-  reducedDims = "LSI_Combined",
-  name = "Harmony_Combined",
-  groupBy = c("libraryID", "donorID"),
-  corCutOff = corCutOff,
-  force = TRUE
-)
-
 # umap based on ATAC
 proj <- addUMAP(ArchRProj = proj, reducedDims = "Harmony",
                 name = "UMAP",
-                corCutOff = corCutOff,
-                force = TRUE
-)
-
-# umap based on both
-proj <- addUMAP(ArchRProj = proj, reducedDims = "Harmony_Combined",
-                name = "UMAP_Combined",
                 corCutOff = corCutOff,
                 force = TRUE
 )
