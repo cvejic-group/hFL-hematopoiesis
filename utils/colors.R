@@ -75,8 +75,9 @@ tissue2col <- c(
 )
 
 cycle2col <- c(
-  "G1" = "#66C2A5",
-  "S" = "#FC8D62",
-  "G2M" = "#8DA0CB"
+  'G0'='#984EA3',
+  'G1'='#1f77b4',
+  'S'='#ff7f0e',
+  'G2M'='#2ca02c'
 )
 
