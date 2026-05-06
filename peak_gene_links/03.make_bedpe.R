@@ -27,9 +27,12 @@ make_bedpe <- function(input_cell=NULL, gene_loc=NULL) {
   df |>
     left_join(gene_loc, by = "gene") |>
     separate(col = "peak", into = c("chr1", "left1", "right1"), sep = "-") |>
+    mutate(left1 = as.numeric(left1),
+           right1 = as.numeric(right1)) |>
     filter(chr1 == chr2) |>
     dplyr::select(chr1, left1, right1, chr2, left2, right2, EG, beta_atac) |>
-    mutate(strand1 = ".", strand2 = ".") |>
+    mutate(strand1 = ".", strand2 = ".",
+           distance = abs((right2 + left2)/2 - (right1 + left1)/2)) |>
     mutate(chr1 = factor(chr1, levels = paste0("chr", c(1:22, "X")))) |>
     arrange(chr1, left1) |>
     write_tsv(
@@ -39,9 +42,10 @@ make_bedpe <- function(input_cell=NULL, gene_loc=NULL) {
 }
 
 # gene loc
-genebed_file <- "~/RefData/refdata-cellranger-arc-GRCh38-2020-A-2.0.0/genes/GeneBody_500kb_margin.bed"
+genebed_file <- "~/RefData/refdata-cellranger-arc-GRCh38-2020-A-2.0.0/genes/genes_pos.txt"
 gene_loc <- quiet(read_tsv(genebed_file, col_names = FALSE)) |>
-  dplyr::select(chr2 = X1, left2 = X2, right2 = X3, gene = X4)
+  dplyr::select(chr2 = X2, left2 = X3, right2 = X4, gene = X1) |>
+  mutate(left2 = left2 - 1)
 
 # test
 #i <- "GP"
