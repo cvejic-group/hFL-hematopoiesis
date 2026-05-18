@@ -39,13 +39,13 @@ gene.idx <- gsub(AUC.idx, pattern = "-region", replacement = "", fixed = TRUE) |
   intersect(rownames(FL.SeuratObj))
 ct_col <- "anno_wnn_v51"
 interested_TF.idx <- c("GATA1", "GATA2", "GATA4", "GATA5")
+interested_TF_AUC.idx <- paste0(interested_TF.idx, "-region")
 
 # AUCell
-for (i in interested_TF.idx) {
-  idx <- i
+for (i in interested_TF_AUC.idx) {
   idx_name <- i
   
-  df <- FetchData(FL.SeuratObj, vars = c(ct_col, idx))
+  df <- FetchData(FL.SeuratObj, vars = c(ct_col, idx_name))
   colnames(df) <- c("CellType", "AUC")
   df <- df |> filter(is.finite(AUC))
   
@@ -83,10 +83,9 @@ for (i in interested_TF.idx) {
 
 # Expression
 for (i in interested_TF.idx) {
-  idx <- i
   idx_name <- i
   
-  df <- FetchData(FL.SeuratObj, vars = c(ct_col, idx), layer = "data")
+  df <- FetchData(FL.SeuratObj, vars = c(ct_col, idx_name), layer = "data")
   colnames(df) <- c("CellType", "Expression")
   df <- df |> filter(is.finite(Expression))
   
@@ -127,13 +126,13 @@ for (i in interested_TF.idx) {
 ###########################
 
 # For AUCell scores
-for (i in interested_TF.idx) {
-  idx <- idx_name <- i
+for (i in interested_TF_AUC.idx) {
+  idx_name <- i
   
   umap_df <- Embeddings(FL.SeuratObj, "wnn") %>% 
     as.data.frame() %>% 
     rownames_to_column("cell") %>%
-    mutate(AUC = FL.SeuratObj@meta.data[cell, idx]) %>%
+    mutate(AUC = FL.SeuratObj@meta.data[cell, idx_name]) %>%
     arrange(AUC)
   
   p <- ggplot(umap_df, aes(x = wnnUMAP_1, y = wnnUMAP_2, color = AUC)) +
@@ -148,19 +147,19 @@ for (i in interested_TF.idx) {
   
   # p
   
-  save_plot(filename = paste0("./plots/", idx_name, "_UMAP.png"),
+  save_plot(filename = paste0("./plots/", idx_name, "_AUC_UMAP.png"),
             p, base_height = 10, base_width = 11, dpi =300)
 }
 
 # Expression
 exp.m <- GetAssayData(FL.SeuratObj, assay = "RNA", layer = "data")
 for (i in interested_TF.idx) {
-  idx <- idx_name <- i
+  idx_name <- i
   
   umap_df2 <- Embeddings(FL.SeuratObj, "wnn") %>%
     as.data.frame() %>%
     rownames_to_column("cell") %>%
-    mutate(Exp = as.vector(exp.m[idx ,])) %>%
+    mutate(Exp = as.vector(exp.m[idx_name ,])) %>%
     arrange(Exp)
   
   p <- ggplot(umap_df2, aes(x = wnnUMAP_1, y = wnnUMAP_2, color = Exp)) +
