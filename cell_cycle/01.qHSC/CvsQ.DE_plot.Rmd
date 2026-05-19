@@ -233,6 +233,26 @@ ggsave2(
 )
 ```
 
+by donor
+
+```{r}
+d4p <- srat@meta.data |> filter(PCW_new != 'Mixed') |> 
+  group_by(PCW_new, donorID, G0_label) |> 
+  summarise(n = n()) |> 
+  mutate(perc = n/sum(n)*100)
+
+d4p |> 
+  ggplot(aes(x = donorID, y = perc, fill = G0_label)) +
+  geom_col() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = cycle2col) +
+  facet_grid(.~PCW, scales = "free_x", space = "free_x") +
+  labs(x = NULL, y = "Percentage", fill = "CC Phase") +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+  )
+```
+
 ## DEGs {.tabset}
 
 ### Cmp. with previous signatures
