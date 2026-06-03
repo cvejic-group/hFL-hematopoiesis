@@ -4,3 +4,6 @@
 [submodule "annotation/04.scavenge/scavenge-smk-pipeline"]
 	path = annotation/04.scavenge/scavenge-smk-pipeline
 	url = git@github.com:cvejic-group/scavenge-smk-devmult.git
+[submodule "tf_footprinting/tobias-smk-pipeline"]
+	path = tf_footprinting/tobias-smk-pipeline
+	url = https://github.com/cvejic-group/tobias-smk-devmult.git

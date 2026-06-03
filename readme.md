@@ -53,6 +53,7 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * [chrombpnet-smk-pipeline](https://github.com/cvejic-group/chrombpnet-smk-devmult)
   * postprocess
   * analysis
+  * [tobias-smk-pipeline](https://github.com/cvejic-group/tobias-smk-devmult)
 
 * query_mapping: Mapping FL HSC to AGM data from [Calvanese et al. 2022, Nature](https://www.nature.com/articles/s41586-022-04571-x)
 
