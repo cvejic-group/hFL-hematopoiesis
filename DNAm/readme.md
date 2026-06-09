@@ -2,7 +2,7 @@
 
 This folder contains the DNA methylation analysis pipeline for developmental methylation profiling and integration with chromatin and gene expression features.
 
-The pipeline starts from Nanopore methylation calls generated with Dorado and the [Epi2me human variation workflow (v2.7.2)](https://github.com/epi2me-labs/wf-human-variation), producing `bedmethyl` files from `modBAM` output.
+The pipeline starts from Nanopore methylation calls generated with Dorado and the [Epi2me human variation workflow (v2.7.2)](https://github.com/epi2me-labs/wf-human-variation/tree/v2.7.2), producing `bedmethyl` files from `modBAM` output.
 
 ## Contents
 
