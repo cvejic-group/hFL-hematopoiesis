@@ -43,6 +43,8 @@ Code and scripts used for the custom analyses in the manuscript. These are share
   * dev_diff_peak
   * dev_diff_gene
 
+* hsc_subclustering: explore the heterogeneity within HSCs
+
 * gwas_enrichment: GWAS signal enrichment using cell type-resolved regulatory elements
   * sldsc
   * magama

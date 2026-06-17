@@ -1,0 +1,320 @@
+---
+title: "archr.HSC_CvsQ.chromVAR_diff_peak"
+author: "Yiwei Niu"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "archr.HSC_CvsQ.chromVAR_diff_peak"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+## Set up
+
+```{r}
+library(tidyverse)
+
+# plot
+library(scattermore)
+library(ggrastr)
+library(ComplexHeatmap)
+
+# patch
+library(patchwork)
+library(cowplot)
+theme_set(theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+))
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+library(ArchR)
+```
+
+```{r source, cache = FALSE}
+print(1)
+range01 <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+source("/work/home/project/20231127_DevM/devm_r432/utils/plot.R")
+```
+
+## Set ArchR
+
+```{r set-ArchR, cache=FALSE}
+# set up
+set.seed(1)
+# default number of threads
+addArchRThreads(threads = 12)
+# add a reference genome annotation for ArchR
+addArchRGenome("hg38")
+# chr prefix to exclude KI/GL scaffolds
+addArchRChrPrefix(chrPrefix = TRUE)
+```
+
+## Load data
+
+Load saved proj
+
+```{r load-proj, cache=FALSE}
+proj_dir <- "archr_48FL"
+proj <- loadArchRProject(path = here::here("output", proj_dir))
+proj
+```
+
+```{r}
+getAvailableMatrices(proj)
+```
+
+Change the order of celltypes
+
+```{r}
+new_names <- c("1_HSC", "2_GP", "3_Granulocyte", "4_MEMP-t", "5_MEMP", "6_MEP", "7_MEMP-Mast-Ery", "8_MEMP-Ery", "9_Early-Ery", "10_Late-Ery", "11_MEMP-MK", "12_MK", "13_MastP-t", "14_MastP", "15_Mast", "16_MDP", "17_Monocyte", "18_Kupffer", "19_cDC1", "20_cDC2", "21_pDC", "22_ASDC", "23_LMPP", "24_LP", "25_Cycling-LP", "26_PreProB", "27_ProB-1", "28_ProB-2", "29_Large-PreB", "30_Small-PreB", "31_IM-B", "32_NK", "33_ILCP", "34_T", "35_Hepatocyte", "36_Endothelia")
+names(new_names) <- c(
+  "HSC", "GP", "Granulocyte",
+  "MEMP-t", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
+  "MEMP-MK", "MK", "MastP-t", "MastP", "Mast",
+  "MDP", "Monocyte", "Kupffer", "cDC1", "cDC2", "pDC", "ASDC",
+  "LMP", "LP", "Cycling-LP", "PreProB", "ProB-1", "ProB-2", "Large-PreB", "Small-PreB", "IM-B",
+  "NK", "ILCP", "T",
+  "Hepatocyte", "Endothelia"
+)
+proj$celltype2 <- new_names[proj$celltype]
+table(proj$celltype2, useNA = "ifany")
+```
+
+## by celltype
+
+The deviations
+
+```{r fig.width=6, fig.height=10}
+p <- plotGroups(
+  ArchRProj = proj,
+  groupBy = "celltype2",
+  colorBy = "HSC_CvsQMatrix",
+  name = c("deviations:G0up", "deviations:G0dn"),
+  imputeWeights = NULL
+)
+
+p2 <- lapply(seq_along(p), function(x) {
+  if (x != 1) {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  } else {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  }
+})
+do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(1.5, rep(1, length(p2) - 1))), p2))
+```
+
+The Z score
+
+```{r fig.width=6, fig.height=10}
+p <- plotGroups(
+  ArchRProj = proj,
+  groupBy = "celltype2",
+  colorBy = "HSC_CvsQMatrix",
+  name = c("z:G0up", "z:G0dn"),
+  imputeWeights = NULL,
+  maxCells = 1000000 # default 1000
+)
+
+p2 <- lapply(seq_along(p), function(x) {
+  if (x != 1) {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  } else {
+    p[[x]] + guides(color = FALSE, fill = FALSE) +
+      theme_ArchR(baseSize = 6) +
+      theme(plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm")) +
+      theme(
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      ) + ylab("")
+  }
+})
+do.call(cowplot::plot_grid, c(list(nrow = 1, rel_widths = c(1.5, rep(1, length(p2) - 1))), p2))
+```
+
+## UMAP
+
+neat
+
+```{r}
+# umap
+df_wnn <- read_csv("/work/DevM_analysis/01.annotation/10.integration_joint_clean/data/FL_wnn_umap.csv") %>% 
+  mutate(barcode = str_replace(barcode, "_", "#"))
+
+# qHSC/cHSC labels
+df_hsc <- read_csv("/work/DevM_analysis/05.cellcycle/data/HSC_CCPhase_VCTime.csv") %>%
+  mutate(barcode = str_replace(barcode, '_', '#'),
+         celltype3 = case_when(
+           CC_Phase == "G0" ~ "qHSC",
+           TRUE ~ "cHSC"
+         )) %>%
+  dplyr::select(barcode, celltype3)
+
+# cell type
+cellmeta <- getCellColData(proj) %>%
+  as.data.frame() %>%
+  rownames_to_column("barcode") %>%
+  dplyr::select(barcode, celltype) %>% 
+  left_join(df_hsc, by = "barcode") %>% 
+  mutate(celltype3 = case_when(
+    is.na(celltype3) ~ celltype,
+    TRUE ~ celltype3
+  ))
+
+dat_G0up <- p$`z:G0up`$data %>%
+  rownames_to_column("barcode") %>%
+  dplyr::select(barcode, G0up = y)
+dat_G0dn <- p$`z:G0dn`$data %>%
+  rownames_to_column("barcode") %>%
+  dplyr::select(barcode, G0dn = y)
+
+# join
+df <- df_wnn %>%
+  left_join(cellmeta, by = "barcode") %>% 
+  left_join(dat_G0up, by = "barcode") %>% 
+  left_join(dat_G0dn, by = "barcode")
+
+# points buried
+set.seed(1)
+d4p <- df |> sample_frac(1)
+```
+
+plot
+
+```{r fig.width=8, fig.height=3.75}
+p1 <- d4p |> 
+  ggplot(aes(x = WNN_UMAP_1, y = WNN_UMAP_2, color = G0up)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  scale_color_viridis_c(option = "magma") +
+  labs(title = "G0 up-regulated peaks", color = "ChromVAR z") +
+  publ_theme +
+  small_axis(label = "wnnUMAP", fix_coord = FALSE)
+p2 <- d4p |> 
+  ggplot(aes(x = WNN_UMAP_1, y = WNN_UMAP_2, color = G0dn)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  scale_color_viridis_c(option = "magma") +
+  labs(title = "G0 down-regulated peaks", color = "ChromVAR z") +
+  publ_theme +
+  small_axis(label = "wnnUMAP", fix_coord = FALSE)
+p1 + p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC_CvsQ_diff_peak.chromVAR_umap.pdf"),
+  width = 8, height = 3.75
+)
+```
+
+boxplot
+
+```{r fig.width=5, fig.height=6}
+p1 <- d4p %>% 
+  ggplot(aes(x = reorder(celltype3, G0up, median), G0up)) +
+  ggrastr::rasterize(geom_boxplot(outlier.size = 0.1,
+               outlier.alpha = 0.3,
+               outlier.color = NULL), dpi = 600) +
+  labs(x = NULL, y = "ChromVAR z", title = "G0 up-regulated peaks") +
+  publ_theme +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+p2 <- d4p %>% 
+  ggplot(aes(x = reorder(celltype3, G0dn, median), G0dn)) +
+  ggrastr::rasterize(geom_boxplot(outlier.size = 0.1,
+               outlier.alpha = 0.3,
+               outlier.color = NULL), dpi = 600) +
+  labs(x = NULL, y = "ChromVAR z", title = "G0 down-regulated peaks") +
+  publ_theme +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+p1/p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC_CvsQ_diff_peak.chromVAR_boxplot_rasterize.pdf"),
+  width = 5, height = 6
+)
+```
+
+```{r fig.width=5, fig.height=6}
+p1 <- d4p %>% 
+  ggplot(aes(x = reorder(celltype3, G0up, median), G0up)) +
+  geom_boxplot(outlier.size = 0.1,
+               outlier.alpha = 0.3,
+               outlier.color = NULL) +
+  labs(x = NULL, y = "ChromVAR z", title = "G0 up-regulated peaks") +
+  publ_theme +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+p2 <- d4p %>% 
+  ggplot(aes(x = reorder(celltype3, G0dn, median), G0dn)) +
+  geom_boxplot(outlier.size = 0.1,
+               outlier.alpha = 0.3,
+               outlier.color = NULL) +
+  labs(x = NULL, y = "ChromVAR z", title = "G0 down-regulated peaks") +
+  publ_theme +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+p1/p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC_CvsQ_diff_peak.chromVAR_boxplot.pdf"),
+  width = 5, height = 6
+)
+```
+
+## Session info
+

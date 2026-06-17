@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-# nohup Rscript code/HSC.CvsQ.DE_lmm.R > logs/HSC.CvsQ.DE_lmm.log &
+# nohup Rscript code/01.CvsQ.DE_LMM.R > logs/01.CvsQ.DE_LMM.log &
 
 DOCNAME <- "HSC.CvsQ.DE"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)

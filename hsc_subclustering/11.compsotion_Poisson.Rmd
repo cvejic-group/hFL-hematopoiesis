@@ -1,0 +1,284 @@
+---
+title: "11.compsotion_Poisson"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "11.compsotion_Poisson"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+# plot
+library(scales)
+library(scattermore)
+library(ggrastr)
+library(ggpubr)
+library(ggbeeswarm)
+
+# patch
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# color
+library(ggsci)
+
+# srat
+library(Seurat)
+
+# model
+library(lme4)
+library(numDeriv)
+library(DHARMa)
+library(lmtest)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+source(here::here("utils/CellTypeCompositionAnalysis.R"))
+```
+
+## Set up
+
+Load cellmeta
+
+```{r}
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_HSC_PCW250401/data/FL_rna_clustered.rds")
+srat
+```
+
+load HSC sub-clustering
+
+```{r}
+df_hsc = read.csv('/work/DevM_analysis/01.annotation/11.subclustering/HSC/data/FL_wnn_cellmeta.v00.csv') |> 
+  dplyr::select(barcode = X, anno_wnn_hsc = leiden_wnn_0.3) |> 
+  mutate(anno_wnn_hsc = paste0("HSC-", anno_wnn_hsc)) |> 
+  mutate(anno_wnn_hsc = factor(anno_wnn_hsc, levels = paste0("HSC-", 0:4)))
+head(df_hsc)
+```
+
+Neat
+
+```{r}
+obs_tbl <- srat@meta.data |>
+  rownames_to_column("barcode") |> 
+  left_join(df_hsc, by = "barcode")
+
+obs_tbl$PCWsca <- scale(as.integer(as.character(obs_tbl$PCW)))
+unique(obs_tbl$PCWsca)
+```
+
+```{r}
+metadata <- obs_tbl |> 
+  dplyr::select(sampleID, libraryID, donorID, Sex, PCW, PCWsca, Batch) |> 
+  distinct() |> 
+  mutate(Sex = factor(Sex, levels = c("M", "F")),
+         Batch = factor(Batch),
+         donorID =factor(donorID))
+str(metadata)
+```
+
+count table (cell number of each cell type and each sample)
+
+```{r}
+Y <- .make_count_matrix(obs_tbl, "sampleID", "anno_wnn_hsc")
+dim(Y)
+```
+
+input for glmer
+
+```{r}
+input_dbl <- .make_input_for_glmer(Y = Y, metadata_tbl = metadata, colSample = "sampleID")
+head(input_dbl)
+```
+
+## Library/Donor/Batch as random, Sex as fixed (model 4)
+
+`Ncs ∼ PCW+Sex+(1∣Celltype)+(1∣Library)+(1∣Donor)+(1∣Batch)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)+(1∣Batch)`
+
+```{r}
+terms <- c(
+    "PCWsca",
+    "Sex",
+    sprintf("(1|%s)", c("libraryID", "donorID", "Batch")),
+    sprintf("(%s-1|Celltype)", "PCWsca"),
+    sprintf("(1|%s:Celltype)", c("libraryID", "donorID", "Batch"))
+  )
+formula_str <- paste(c("I(Y) ~ (1|Celltype)", terms), collapse = "+")
+f <- as.formula(formula_str)
+f
+```
+
+fit
+
+```{r eval=FALSE}
+res4 <- CellTypeCompositionAnalysis2(f = f, data = input_dbl)
+saveRDS(res4, file = here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.Sex_asFixed.rds"))
+```
+
+```{r}
+res4 <- readRDS(here::here("output", DOCNAME, "GLMM.Library_Donor_Batch_asRandom.Sex_asFixed.rds"))
+summary(res4$res.prop)
+```
+
+```{r fig.width=4, fig.height=6}
+plt_gen <- plot_ranef(res4$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = levels(obs_tbl$anno_wnn_hsc),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_hsc)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.Sex_asFixed.pdf"),
+  width = 4, height = 12
+)
+```
+
+```{r fig.width=10, fig.height=6}
+plt_gen <- plot_ranef(res4$ranef, vars=list(PCWsca = c('Slope-PCWsca'),
+                                            Batch = levels(metadata$Batch)), 
+                     celltypes = levels(obs_tbl$anno_wnn_hsc),
+                     celltype_order = rev(levels(obs_tbl$anno_wnn_hsc)),
+                     highlightLtsr = 0.95) + theme_pubr(legend = "right") +
+   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+         axis.text.x=element_text(angle=60, vjust=1, hjust=1))
+plt_gen
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "Dotplot.Library_Donor_Batch_asRandom.Sex_asFixed.FULL.pdf"),
+  width = 10, height = 12
+)
+```
+
+Plot variable explained variance
+
+```{r fig.width=6, fig.height=4}
+plot_sdse(sdse_tbl = res4$sdse, colSample = "sampleID") +
+  mytheme
+```
+
+### residual diagnostics
+
+```{r fig.width=8, fig.height=5}
+sim_res <- simulateResiduals(fittedModel = res4$res.prop)
+plot(sim_res)
+```
+
+dispersion test
+
+```{r fig.width=5, fig.height=4}
+testDispersion(sim_res)
+```
+
+Test for Zero-Inflation
+
+```{r fig.width=5, fig.height=4}
+testZeroInflation(sim_res)
+```
+
+## Plot together with milo
+
+WNN-milo
+
+```{r}
+df_milo <- read.csv("/work/DevM_analysis/02.abundance/Milo_FL_HSC_PCW250401/data/FL_wnn_milo.nhood_test_res.csv")
+dim(df_milo)
+table(df_milo$nhood_annotation)
+table(df_milo$donorSpecific)
+```
+
+Milo plot
+
+```{r fig.width=5, fig.height=4}
+d4p <- df_milo |> 
+  filter(nhood_annotation != "Mixed", donorSpecific == "Good") |> 
+  group_by(nhood_annotation) %>%
+  mutate(m_logFC = median(logFC)) |> 
+  ungroup() |> 
+  arrange(-m_logFC) |> 
+  mutate(nhood_annotation=factor(nhood_annotation, levels=unique(nhood_annotation))) |> 
+  mutate(logFC_color = ifelse(is_signif=="True", logFC, NA))
+
+p_milo <- d4p %>%
+  ggplot(aes(x = nhood_annotation, y = logFC, color=logFC_color)) +
+  geom_quasirandom(size=0.8, width = .3) +
+  geom_point(data= . %>% distinct(nhood_annotation, m_logFC), aes(x=nhood_annotation, y=m_logFC), color="black")  +
+  scale_color_gradient2() +
+  coord_flip() +
+  guides(color="none", fill="none") +
+  geom_hline(yintercept=0, linetype=2) +
+  xlab("") + ylab("Log Fold Change in time") +
+  theme_pubr(legend = "right", base_size = 15)
+p_milo
+```
+
+GLMM
+
+```{r fig.width=4, fig.height=5}
+plt_gen <- plot_ranef2(res4$ranef, vars=list(PCWsca = c('Slope-PCWsca')), 
+                     celltypes = intersect(obs_tbl$anno_wnn_hsc, levels(d4p$nhood_annotation)),
+                     celltype_order = levels(d4p$nhood_annotation),
+                     highlightLtsr = 0.95) +
+  labs(y = NULL, x = "PCW") +
+  theme_pubr(legend = "right", base_size = 15) +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text.x=element_blank())
+plt_gen
+```
+
+Align
+
+```{r fig.width=7, fig.height=4}
+p_milo +
+  (plt_gen + theme(axis.text.y = element_blank())) +
+  plot_layout(widths = c(3, 1))
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC.Ctype_DA_milo_and_GLMM.pdf"),
+  width = 7, height = 4
+)
+```
+
+## Session info
+

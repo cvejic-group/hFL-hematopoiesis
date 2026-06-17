@@ -1,0 +1,382 @@
+---
+title: "HSC.dev_de_lmm_subcluster"
+author: "Yiwei Niu"
+---
+
+- Run `12.dev_de_lmm_subcluster.R` first
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.dev_de_lmm_subcluster"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+
+# plot
+library(ggsci)
+library(RColorBrewer)
+library(scales)
+library(ComplexHeatmap)
+library(pheatmap)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggpubr)
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# specific
+library(Seurat)
+
+# ORA
+library(clusterProfiler)
+library(org.Hs.eg.db)
+#library(msigdbr)
+library(enrichR)
+
+# misc
+library(UpSetR)
+library(ggVennDiagram)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+#source(here::here("utils/preprocess.R"))
+source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+source(here::here("utils/functional_enrichment.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+```{r}
+dev_de_dir <- "HSC.dev_de_lmm"
+```
+
+meta
+
+```{r}
+mdata <- readRDS(here::here("output", dev_de_dir, "mdata.rds"))
+srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_HSC_PCW250401/data/FL_rna_clustered.rds")
+table(srat$PCW, useNA = "ifany")
+```
+
+LMM
+
+```{r}
+df_de <- readRDS(here::here("output", dev_de_dir, "HSC_lmm_de_time_df.rds"))
+df_de_sig <- df_de[df_de$ltsr > 0.9,]
+table(ifelse(df_de_sig$beta > 0, "up", "dn"))
+```
+
+LMM for each subcluster
+
+```{r}
+de_lst <- lapply(levels(mdata$celltype), function(i) {
+  readRDS(here::here("output", DOCNAME, paste0(i, "_lmm_de_time_df.rds"))) |> 
+    mutate(celltype = i)
+})
+de_df <- do.call(rbind, de_lst)
+
+# LTSR > 0.9
+de_df_sig <- de_df[de_df$ltsr > 0.9,]
+table(de_df_sig$celltype)
+```
+
+## Overlap
+
+up
+
+```{r fig.width=8, fig.height=5}
+up_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta > 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta > 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta > 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta > 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta > 0, celltype == "HSC-4") |> pull(gene)
+)
+dn_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta < 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta < 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta < 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta < 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta < 0, celltype == "HSC-4") |> pull(gene)
+)
+ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 30)
+```
+
+Overlap dn
+
+```{r fig.width=8, fig.height=5}
+ggVennDiagram(dn_lst, force_upset = TRUE, nintersects = 30)
+```
+
+## Olp (with all HSC)
+
+up
+
+```{r fig.width=6, fig.height=4}
+up_lst$HSC <- df_de_sig |> filter(beta > 0) |> pull(gene)
+dn_lst$HSC <- df_de_sig |> filter(beta < 0) |> pull(gene)
+
+p1 <- ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 24)
+p1
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-DEGs-up-olp.pdf"),
+  width = 6, height = 4
+)
+```
+
+Overlap dn
+
+```{r fig.width=6, fig.height=4}
+ggVennDiagram(dn_lst, force_upset = TRUE, nintersects = 24)
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-DEGs-down-olp.pdf"),
+  width = 6, height = 4
+)
+```
+
+## Cmp. with HSC-DEGs
+
+```{r fig.width=7.5, fig.height=5}
+d4p <- de_df |> 
+  pivot_wider(id_cols = "gene", names_from = "celltype", values_from = c("beta", "ltsr")) |> 
+  left_join(df_de, by = "gene")
+
+p <- lapply(paste0("HSC-", c(0:4)), function(i) {
+  y_col <- paste0("beta_", i)
+  d4p |> 
+    ggplot(aes(x = beta, y = .data[[y_col]])) +
+    ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+    stat_cor() +
+    labs(x = "Beta of all HSC", y = paste0("Beta of ", i)) +
+    publ_theme
+}) |> 
+  wrap_plots(ncol = 3)
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-beta-vs-HSC-altogether.pdf"),
+  width = 7.5, height = 5
+)
+```
+
+## DEGs {.tabset}
+
+DEGs of all subtypes
+
+```{r}
+de_df_sig |> 
+  pivot_wider(id_cols = "gene", names_from = "celltype", values_from = c("beta", "ltsr")) |> 
+  DT::datatable()
+```
+
+## ORA
+
+### Up {.tabset}
+
+```{r eval=FALSE}
+up_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta > 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta > 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta > 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta > 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta > 0, celltype == "HSC-4") |> pull(gene)
+)
+res_ora <- cmp_enrichment_multi(
+  compareList = up_lst,
+  outputdir = here::here("output", DOCNAME),
+  outprefix = "HSC_subtype_dev_de_up",
+  GOCC = FALSE,
+  GOMF = FALSE
+)
+# Warning: 8.37% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 9.59% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 8.82% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 8.05% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 8.86% of input gene IDs are fail to map
+```
+
+#### Hallmark
+
+```{r , fig.width=8, fig.height=5}
+outprefix <- "HSC_subtype_dev_de_up"
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Hallmark.rds"))
+
+if (file.exists(fname)) {
+  ce.H <- readRDS(fname)
+  dotplot(ce.H, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### KEGG
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_KEGG.rds"))
+
+if (file.exists(fname)) {
+  ck <- readRDS(fname)
+  dotplot(ck, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### Reactome
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Reactome.rds"))
+
+if (file.exists(fname)) {
+  cr <- readRDS(fname)
+  dotplot(cr, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### GO-BP
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
+
+if (file.exists(fname)) {
+  cg.BP <- readRDS(fname)
+  dotplot(cg.BP, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+simplify
+
+```{r , fig.width=8, fig.height=8}
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+### Dn {.tabset}
+
+```{r eval=FALSE}
+dn_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta < 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta < 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta < 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta < 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta < 0, celltype == "HSC-4") |> pull(gene)
+)
+res_ora <- cmp_enrichment_multi(
+  compareList = dn_lst,
+  outputdir = here::here("output", DOCNAME),
+  outprefix = "HSC_subtype_dev_de_dn",
+  GOCC = FALSE,
+  GOMF = FALSE
+)
+# Warning: 1.9% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 2.13% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 0.74% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 1.89% of input gene IDs are fail to map...'select()' returned 1:1 mapping between keys and columns
+# Warning: 1.38% of input gene IDs are fail to map...
+```
+
+#### Hallmark
+
+```{r , fig.width=9, fig.height=5}
+outprefix <- "HSC_subtype_dev_de_dn"
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Hallmark.rds"))
+
+if (file.exists(fname)) {
+  ce.H <- readRDS(fname)
+  dotplot(ce.H, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### KEGG
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_KEGG.rds"))
+
+if (file.exists(fname)) {
+  ck <- readRDS(fname)
+  dotplot(ck, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### Reactome
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Reactome.rds"))
+
+if (file.exists(fname)) {
+  cr <- readRDS(fname)
+  dotplot(cr, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+#### GO-BP
+
+```{r , fig.width=8, fig.height=8}
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
+
+if (file.exists(fname)) {
+  cg.BP <- readRDS(fname)
+  dotplot(cg.BP, showCategory = 10) + 
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+}
+```
+
+simplify
+
+```{r , fig.width=8, fig.height=8}
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
+## Session info
