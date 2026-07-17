@@ -1,9 +1,12 @@
 # SCENIC+ analysis and Cell type-resolved eRegulon (CT-eRegulon) construction
 
-- `scenicplus`: Run **SCENIC+** pipeline with **pycisTopic_polars_1xx** version
-- `celltype_resolved_grn`: Convert the **raw SCENIC+ eRegulon set** into
+- `scenicplus`: This folder contains code for running **SCENIC+** pipeline with **pycisTopic_polars_1xx** version
+- `celltype_resolved_grn`: This folder contains code for converting the **raw SCENIC+ eRegulon set** into
 **cell type-resolved eRegulons (CT-eRegulons)**. It corresponds to the *"Cell type-resolved eRegulon construction"* and
 *"Cross-cell-type differential target analysis of CT-eRegulons"* sections in Methods.
+- `dev_diff_eRegulon`: This folder contains code for developmental differential analysis of HSCs using 
+linear mixed models (LMM) on +/+ activator eRegulons.
+- `pycisTopic_distal_only`: This folder contains code for running pycisTopic on distal regions only.
 
 ---
 
