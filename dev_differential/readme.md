@@ -14,6 +14,8 @@ The LMM method was first described by [Young et al. 2021](https://www.nature.com
   - `HSC.dev_de_lmm.R`: core script
   - `HSC.dev_de_lmm.Rmd`: functional enrichment and visualization
   - `HSC.dev_de_plot.Rmd`: visualization
+  - `HSC.dev_de_lmm_qScoreAdj.r`: adjust for quiescence
+  - `HSC.dev_de_lmm_qScoreAdj.rmd`: comparison with model without adjusting for quiescence
 
 - `dev_diff_peak`: peak-level differential accessibility analysis, metacell-level modeling, and TF motif enrichment.
   - `HSC.dev_da_metacell.R`: core script
