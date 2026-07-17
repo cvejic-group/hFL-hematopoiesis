@@ -20,4 +20,6 @@ This folder contains HSC cell-cycle analysis split into two subfolders: quiescen
 - `Cyclic_PEAK_annotation.r` - Annotates cyclic accessibility peaks with genomic context or regulatory labels.
 - `Cyclic_PEAK_clustering.r` - Clusters cyclic peak patterns and generates heatmaps.
 - `Cyclic_PEAK_tf_enrichment.r` - Performs TF motif enrichment on cyclic peak clusters.
+- `Cyclic_PEAK_tf_PromoterVsDistalEnrichment.r` - Performs TF motif enrichment on cyclic peak grouped by promoter and distal.
+- `Cyclic_PEAK_tf_PromoterVsDistalEnrichment_scatterplot.r` -  Scatter plot for TF motif enrichment on cyclic peak grouped by promoter and distal.
 
