@@ -3,7 +3,7 @@
 # Produces one <prefix>.<n>_topics.model.pkl per topic number.
 set -euo pipefail
 
-RUN_DIR='/users/chenweiy/local_proj/Dev_M/00.Revision1_20260418/20260518_UMAP_with_distal_peaks/results/01.FL_distal_pycisTopic/Mallet_res'
+RUN_DIR='~/Mallet_res'
 RUN_NAME='01.FL_distal_pycisTopic'
 
 binary_matrix_path="${RUN_DIR}/tmp/binary_accessibility_matrix.mtx"

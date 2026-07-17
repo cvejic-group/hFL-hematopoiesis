@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ---- paths (must match 01.build_cistopic_distal.py) ----
-RUN_DIR='/users/chenweiy/local_proj/Dev_M/00.Revision1_20260418/20260518_UMAP_with_distal_peaks/results/01.FL_distal_pycisTopic/Mallet_res'
+RUN_DIR='~/Mallet_res'
 mallet_path='/work/Local_Data/utilities/Mallet/bin/mallet'
 
 binary_matrix_path="${RUN_DIR}/tmp/binary_accessibility_matrix.mtx"
