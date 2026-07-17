@@ -7,6 +7,9 @@
 - `dev_diff_eRegulon`: This folder contains code for developmental differential analysis of HSCs using 
 linear mixed models (LMM) on +/+ activator eRegulons.
 - `pycisTopic_distal_only`: This folder contains code for running pycisTopic on distal regions only.
+- `Scripts`: 
+  `01.metaplot_Validation_eRegulon.R`: This script contains code for validating eRegulon regions using [public ChIp-seq data](https://ashpublications.org/blood/article/142/17/1448/497482/Genome-wide-transcription-factor-binding-maps).
+  `02.ERG_eRegulon_shRNA.R`: This script contains code for validating ERG eRegulon, specifically ERG-NKAIN2 link, using [ERG shRNA knocked down data](https://ashpublications.org/blood/article/138/16/1441/476046/Disruption-of-a-GATA2-TAL1-ERG-regulatory-circuit).
 
 ---
 
