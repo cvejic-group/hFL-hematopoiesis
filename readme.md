@@ -62,7 +62,8 @@ Code and scripts used for the custom analyses in the manuscript. These are share
 * grn_analysis: gene regulatory network (GRN) analysis with SCENIC+ and XGBoost model
   * scenicplus
   * celltype_resolved_grn
-  * dev_diff_eRegulon: developmental effects on SCENIC+ eRegulons
+  * dev_diff_eRegulon: developmental effects on SCENIC+ eRegulons.
+  * B_lineage_demonstration: A detailed demonstration of our eGRN analysis within B lineage.
 
 * misc
   * variancePartition: variance partition analysis
