@@ -9,6 +9,8 @@ This folder contains HSC cell-cycle analysis split into two subfolders: quiescen
 - `04.CvsQ.DE_plot.Rmd` - visualizes qHSC differential expression with volcano plots and summary figures.
 - `05.archr.HSC_CvsQ.chromVAR_diff_peak.R` and `05.archr.HSC_CvsQ.chromVAR_diff_peak.Rmd` - UseschromVAR to compare ATAC peak activity between G0 and other cells.
 - `06.archr.HSC_CvsQ.chromVAR_ChIP_peak.R` and `06.archr.HSC_CvsQ.chromVAR_ChIP_peak.Rmd` - Extends chromVAR analysis to ChIP-derived peak sets.
+- `07.monaLisa_metaplot.R` and `08.monaLisa_metaplot_ALLPeak.R` - Metaplots for promoter and distal regions between q-HSC and c-HSC. They are either from differential peaks, or from all peaks called in HSCs.
+- `09.monaLisa_scatter.R` -  Scatter plot for TF motif enrichment analysis with monaLisa on q-HSC vs c-HSC grouped by promoter and distal.
 
 ## `02.Dynamic_CC_modeling`
 
