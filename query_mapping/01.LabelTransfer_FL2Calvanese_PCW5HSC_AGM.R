@@ -4,7 +4,7 @@
 ########################################################
 
 # Set working directory
-setwd("~/local_data/proj/Dev_Multiome/05.External_Label_Transfer/")
+setwd("~/")
 
 # Load essential packages
 library(scater)
@@ -76,7 +76,7 @@ names(COL8) <- c("HSC",
 ##############################
 
 # Load FL data
-FL.SeuratObj <- readRDS("~/local_data/proj/Dev_Multiome/data/FL_scrna_seurat_20250401.rds")
+FL.SeuratObj <- readRDS("~/FL_scrna_seurat.rds")
 FL.SeuratObj$covar_group <- paste(FL.SeuratObj$donorID, FL.SeuratObj$libraryID, sep = "_")
 
 # Subset to HSC
@@ -93,7 +93,7 @@ saveRDS(FL_PCW5_HSC.SeuratObj, "./FL_PCW5_HSC_SeuratObj.rds")
 
 # Load Calvanese_EDFig1f_AGMHema data as reference
 ## EDFig-1f re-process
-Calvanese_EDFig1f_AGMHema.SeuratObj <- readRDS("~/Local_Data/proj/Dev_Multiome/data/Calvanese_EDFig1f_SeuratObj.rds")
+Calvanese_EDFig1f_AGMHema.SeuratObj <- readRDS("~/Calvanese_EDFig1f_SeuratObj.rds")
 ### Run UMAP with settings specified by original paper
 Calvanese_EDFig1f_AGMHema.SeuratObj <- RunUMAP(Calvanese_EDFig1f_AGMHema.SeuratObj, 
                                                dims = 1:23, 
