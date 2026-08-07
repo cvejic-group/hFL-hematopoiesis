@@ -7,6 +7,7 @@ The LMM method was first described by [Young et al. 2021](https://www.nature.com
 ## Contents
 
 - `LMM.R`: core LMM implementation adapted from the [SKM_ageing_atlas](https://github.com/Teichlab/SKM_ageing_atlas) repository.
+  - `LICENSE`: a copy of the LICENSE file from the [SKM_ageing_atlas](https://github.com/Teichlab/SKM_ageing_atlas) repository.
 
 - `HSC.prep_temporal.R`: prepares input matrices and metadata for temporal analysis, including metacell aggregation and Seurat normalization/scaling.
 
