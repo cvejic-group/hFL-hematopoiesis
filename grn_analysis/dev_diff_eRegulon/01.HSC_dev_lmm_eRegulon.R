@@ -11,7 +11,7 @@
 ##################
 
 # Initialization
-setwd("~/work/")
+setwd("/work/")
 source("./00.LMM.R")
 source("./00.Initialization.R")
 library(tidyverse)
@@ -19,19 +19,14 @@ library(Seurat)
 library(Matrix)
 
 dir.create(here::here("LMM_output"), showWarnings = FALSE)
+DOCNAME <- ""
+
+#############################
+# Part 1: eREgulon Analysis #
+#############################
 
 # Load FL RNA data
 FL.SeuratObj <- readRDS("~/work/FL_scrna_seurat.rds")
-## Add WNN UMAP
-FL_wnn.df <- read.csv("FL_wnn_umap.csv", 
-                      row.names = 1)
-colnames(FL.SeuratObj) <- gsub(pattern = "#", replacement = "_", 
-                               x = colnames(FL.SeuratObj), fixed = TRUE)
-FL_wnn.df <- FL_wnn.df[colnames(FL.SeuratObj) ,]
-wnn_reduction <- CreateDimReducObject(embeddings = as.matrix(FL_wnn.df),
-                                      key = "wnn_",
-                                      assay = DefaultAssay(FL.SeuratObj))
-FL.SeuratObj[["wnn"]] <- wnn_reduction
 ## Subset
 FL_HSC.SeuratObj <- subset(FL.SeuratObj, cell = celltype == "HSC") |> 
   subset(subset = PCW != "Mixed")
@@ -42,49 +37,74 @@ mdata <- FL_HSC.SeuratObj@meta.data |>
 
 # Load AUC data
 # Load data
-TOPeReg_TF_AUCell_mat <- readRDS(paste0(RES_DIR, "TOPeReg_TF_AUCell_mat.rds"))
+TOPeReg_TF_AUCell_mat <- readRDS("TOPeReg_TF_AUCell_mat.rds")
 TF_EXPR.m <- TOPeReg_TF_AUCell_mat$TF_EXPR.m
 AUC_GENE.m <- TOPeReg_TF_AUCell_mat$AUC_GENE.m
 AUC_REGION.m <- TOPeReg_TF_AUCell_mat$AUC_REGION.m
-## Change cell name
-colnames(AUC_GENE.m) <- gsub(pattern = "#", replacement = "_", 
-                             x = colnames(AUC_GENE.m), fixed = TRUE)
+## Change cell name if needed
+# colnames(AUC_GENE.m) <- gsub(pattern = "#", replacement = "_", 
+#                              x = colnames(AUC_GENE.m), fixed = TRUE)
 AUC_gene_HSC.m <- AUC_GENE.m[, rownames(mdata)]
-colnames(AUC_REGION.m) <- gsub(pattern = "#", replacement = "_", 
-                               x = colnames(AUC_REGION.m), fixed = TRUE)
+# colnames(AUC_REGION.m) <- gsub(pattern = "#", replacement = "_", 
+#                                x = colnames(AUC_REGION.m), fixed = TRUE)
 AUC_region_HSC.m <- AUC_REGION.m[, rownames(mdata)]
 
 # Scale AUCell scores
-Y_scale <- t(scale(t(AUC_gene_HSC.m)))
-stopifnot(all(colnames(Y_scale) == mdata$barcode))
+Y_eReg_gene_scale <- t(scale(t(AUC_gene_HSC.m)))
+stopifnot(all(colnames(Y_eReg_gene_scale) == mdata$barcode))
+Y_eReg_region_scale <- t(scale(t(AUC_region_HSC.m)))
+stopifnot(all(colnames(Y_eReg_region_scale) == mdata$barcode))
 
-# linear mixed model
-mdata$log_nCount_RNA <- log1p(mdata$nCount_RNA)
-mdata$log_nFeature_RNA <- log1p(mdata$nFeature_RNA)
-res <- LFLMM(Y_scale, mdata[,c("log_nCount_RNA", "log_nFeature_RNA", "percent.mt", "libraryID", "donorID",
-                               "Sex", "Batch", "PCWsca")], ITRMAX=300)
-saveRDS(res, file = here::here("LMM_output", "HSC_AUC_region_lmm_res.rds"))
+# Gene-based eRegulon: linear mixed model
+res_eReg_gene <- LFLMM(Y_eReg_gene_scale, mdata[,c("percent.mt", "libraryID", "donorID",
+                                                   "Sex", "Batch", "PCWsca")], ITRMAX=300)
+saveRDS(res_eReg_gene, file = here::here("LMM_output", "HSC_AUC_gene_lmm_res.rds"))
 
-# de with scale.data
-DOCNAME <- ""
+# Gene-based eRegulon: de with scale.data
 if (TRUE) {
   # de
-  de <- getBF(Y_scale, res, "PCWsca", DE1 = NA)
-  names(de)
+  de_eReg_gene <- getBF(Y_eReg_gene_scale, res_eReg_gene, "PCWsca", DE1 = NA)
+  names(de_eReg_gene)
   # de df
-  df_de <- data.frame(gene = rownames(de$beta), beta = de$beta[,1], ltsr = de$ltsr[,1]) |>
+  df_eReg_gene <- data.frame(gene = rownames(de_eReg_gene$beta), beta = de_eReg_gene$beta[,1], ltsr = de_eReg_gene$ltsr[,1]) |>
     arrange(-beta)
-  saveRDS(de, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_gene_lmm.rds"))
-  saveRDS(df_de, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_gene_lmm_df.rds"))
+  saveRDS(de_eReg_gene, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_gene_lmm.rds"))
+  saveRDS(df_eReg_gene, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_gene_lmm_df.rds"))
 }
 
-# Generate plots
+# Region-based eRegulon: linear mixed model
+res_eReg_region <- LFLMM(Y_eReg_region_scale, mdata[,c("percent.mt", "libraryID", "donorID",
+                                                       "Sex", "Batch", "PCWsca")], ITRMAX=300)
+saveRDS(res_eReg_region, file = here::here("LMM_output", "HSC_AUC_region_lmm_res.rds"))
+
+# Region-based eRegulon: de with scale.data
+if (TRUE) {
+  # de
+  de_eReg_region <- getBF(Y_eReg_region_scale, res_eReg_region, "PCWsca", DE1 = NA)
+  names(de_eReg_region)
+  # de df
+  df_eReg_region <- data.frame(gene = rownames(de_eReg_region$beta), beta = de_eReg_region$beta[,1], ltsr = de_eReg_region$ltsr[,1]) |>
+    arrange(-beta)
+  saveRDS(de_eReg_region, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_region_lmm.rds"))
+  saveRDS(df_eReg_region, file = here::here("LMM_output", DOCNAME, "HSC_dev_AUC_region_lmm_df.rds"))
+}
+
+####################
+# Part 2: Plotting #
+####################
+
+# Load LMM results
+df_eReg_gene <- readRDS(here::here("LMM_output", DOCNAME, "HSC_dev_AUC_gene_lmm_df.rds"))
+df_eReg_region <- readRDS(here::here("LMM_output", DOCNAME, "HSC_dev_AUC_region_lmm_df.rds"))
+df_TF_expr <- readRDS("~/work/HSC_lmm_de_time_df.rds")
+
+# Region-based eRegulon dynamics across development time
 ## Set threshold
-df_de$significant <- df_de$ltsr > 0.75
-N_top <- length(which(df_de$significant))
-top_select <- df_de[order(df_de$ltsr, decreasing = T), ][1:N_top, ]
-Cairo::CairoPDF("SuppFig16a.pdf", width = 12, height = 12, family = "Arial")
-ggplot(df_de, aes(x = beta, y = ltsr, color = significant, size = ltsr)) +
+df_eReg_region$significant <- df_eReg_region$ltsr > 0.75
+N_top <- length(which(df_eReg_region$significant))
+top_select <- df_eReg_region[order(df_eReg_region$ltsr, decreasing = T), ][1:N_top, ]
+Cairo::CairoPDF("SuppFig_a.pdf", width = 12, height = 12, family = "Arial")
+ggplot(df_eReg_region, aes(x = beta, y = ltsr, color = significant, size = ltsr)) +
   geom_point(alpha = 0.8) +
   scale_color_manual(values = c("grey70", "#253494"),
                      name = "LTSR significant") +
@@ -114,20 +134,18 @@ ggplot(df_de, aes(x = beta, y = ltsr, color = significant, size = ltsr)) +
   )
 dev.off()
 
-# Coordination with gene's LMM
-HSC_lmm_de_time_df <- readRDS("~/work/HSC_lmm_de_time_df.rds")
-HSC_lmm_de_time_df2 <- HSC_lmm_de_time_df[df_de$gene ,]
-df_de_gene <- HSC_lmm_de_time_df2
-TF.idx <- intersect(rownames(df_de), rownames(df_de_gene))
+# Coordination of gene-based eRegulon with TF expression LMM
+df_TF_expr <- df_TF_expr[df_eReg_gene$gene ,]
+TF.idx <- intersect(rownames(df_eReg_gene), rownames(df_TF_expr))
 
-all_df <- df_de[TF.idx ,]
-all_df$beta_gene <- df_de_gene[TF.idx ,]$beta
-all_df$ltsr_avg <- (all_df$ltsr + df_de_gene[TF.idx ,]$ltsr)/2
-all_df$significant <- all_df$ltsr > 0.75
-N_top <- length(which(all_df$significant))
-top_select <- all_df[order(all_df$ltsr, decreasing = T), ][1:N_top, ]
-Cairo::CairoPDF("SuppFig16b.pdf", width = 12, height = 12, family = "Arial")
-ggplot(all_df, aes(x = beta, y = beta_gene, color = significant, size = ltsr_avg)) +
+df_eReg_gene_vs_TF <- df_eReg_gene[TF.idx ,]
+df_eReg_gene_vs_TF$beta_TF <- df_TF_expr[TF.idx ,]$beta
+df_eReg_gene_vs_TF$ltsr_avg <- (df_eReg_gene_vs_TF$ltsr + df_TF_expr[TF.idx ,]$ltsr)/2
+df_eReg_gene_vs_TF$significant <- df_eReg_gene_vs_TF$ltsr > 0.75
+N_top <- length(which(df_eReg_gene_vs_TF$significant))
+top_select <- df_eReg_gene_vs_TF[order(df_eReg_gene_vs_TF$ltsr, decreasing = T), ][1:N_top, ]
+Cairo::CairoPDF("Fig_e.pdf", width = 12, height = 12, family = "Arial")
+ggplot(df_eReg_gene_vs_TF, aes(x = beta, y = beta_TF, color = significant, size = ltsr_avg)) +
   geom_point(alpha = 0.8) +
   scale_color_manual(values = c("grey70", "#253494"),
                      name = "LTSR significant") +
@@ -156,18 +174,17 @@ ggplot(all_df, aes(x = beta, y = beta_gene, color = significant, size = ltsr_avg
   )
 dev.off()
 
-# Coordination with region_eRegulon's LMM
-df_de_gene <- readRDS("./LMM_output/HSC_dev_AUC_lmm_df.rds")
-all_df <- df_de
-all_df$beta_gene <- df_de_gene[all_df$gene,]$beta
-all_df$ltsr_gene <- df_de_gene[all_df$gene,]$ltsr
+# Coordination of region-based eRegulon with gene-based eRegulon LMM
+df_eReg_region_vs_gene <- df_eReg_region
+df_eReg_region_vs_gene$beta_gene <- df_eReg_gene[df_eReg_region_vs_gene$gene,]$beta
+df_eReg_region_vs_gene$ltsr_gene <- df_eReg_gene[df_eReg_region_vs_gene$gene,]$ltsr
 
-all_df$ltsr_avg <- (all_df$ltsr + all_df$ltsr_gene)/2
-all_df$significant <- (all_df$ltsr > 0.75 | all_df$ltsr_gene > 0.75)
-N_top <- length(which(all_df$significant))
-top_select <- all_df[which(all_df$significant), ]
-Cairo::CairoPDF("SuppFig16c.pdf", width = 12, height = 12, family = "Arial")
-ggplot(all_df, aes(x = beta, y = beta_gene, color = significant, size = ltsr_avg)) +
+df_eReg_region_vs_gene$ltsr_avg <- (df_eReg_region_vs_gene$ltsr + df_eReg_region_vs_gene$ltsr_gene)/2
+df_eReg_region_vs_gene$significant <- (df_eReg_region_vs_gene$ltsr > 0.75 | df_eReg_region_vs_gene$ltsr_gene > 0.75)
+N_top <- length(which(df_eReg_region_vs_gene$significant))
+top_select <- df_eReg_region_vs_gene[which(df_eReg_region_vs_gene$significant), ]
+Cairo::CairoPDF("SuppFig_c.pdf", width = 12, height = 12, family = "Arial")
+ggplot(df_eReg_region_vs_gene, aes(x = beta, y = beta_gene, color = significant, size = ltsr_avg)) +
   geom_point(alpha = 0.8) +
   scale_color_manual(values = c("grey70", "#253494"),
                      name = "LTSR significant") +
