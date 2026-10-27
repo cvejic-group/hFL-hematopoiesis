@@ -34,7 +34,7 @@ proj
 markersPeaks <- readRDS(file.path(proj_dir, "MarkerFeatures", "markersPeaks.rds"))
 diffPeaks_FDR5_LFC1 <- getMarkers(markersPeaks, cutOff = "FDR <= 0.05 & Log2FC >= 1")
 
-save_diff_peak <- function(diffPeaks = NULL, save_dir = NULL, padding = c(-1000, 1000)) {
+save_diff_peak <- function(diffPeaks = NULL, save_dir = NULL, padding = c(1000, 1000)) {
   # use new names
   col_order <- c("HSC", "GP", "Granulocyte",
                  "49-MEMP", "MEMP", "MEP", "MEMP-Mast-Ery", "MEMP-Ery", "Early-Ery", "Late-Ery",
@@ -71,14 +71,14 @@ save_diff_peak <- function(diffPeaks = NULL, save_dir = NULL, padding = c(-1000,
 }
 
 # FDR5_LFC1 padding 1kb
-save_diff_peak(diffPeaks = diffPeaks_FDR5_LFC1, save_dir = "FDR5_LFC1_padding_1k", padding = c(-1000, 1000))
+save_diff_peak(diffPeaks = diffPeaks_FDR5_LFC1, save_dir = "FDR5_LFC1_padding_1k", padding = c(1000, 1000))
 
 # all peaks as background
 gr <- proj@peakSet
 length(proj@peakSet)
 
 # ctrl peaks to bed
-ctrl_to_bed <- function(gr=NULL, save_dir=NULL, padding = c(-1000, 1000)) {
+ctrl_to_bed <- function(gr=NULL, save_dir=NULL, padding = c(1000, 1000)) {
   df <- data.frame(chr=seqnames(gr),
                    left=start(gr),
                    right=end(gr)) %>%
@@ -96,7 +96,7 @@ ctrl_to_bed <- function(gr=NULL, save_dir=NULL, padding = c(-1000, 1000)) {
 saveRDS(gr, file = file.path(out_dir, "archr_peakSet.rds"))
 
 # to different dir
-ctrl_to_bed(gr = gr, save_dir = "FDR5_LFC1_padding_1k", padding = c(-1000, 1000))
+ctrl_to_bed(gr = gr, save_dir = "FDR5_LFC1_padding_1k", padding = c(1000, 1000))
 
 # session info
 devtools::session_info()
