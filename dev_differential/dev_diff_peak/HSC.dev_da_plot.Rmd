@@ -96,10 +96,32 @@ srat
 table(srat$PCW, useNA = "ifany")
 ```
 
-LMM res
+LMM df
 
 ```{r}
-df_res <- readRDS(here::here("output", "HSC.dev_da_CpG", "HSC_dev_da_peak_CGcontent_anno.rds"))
+da_res_dir <- "HSC.dev_da_lmm_mc_scale"
+df_de_ln <- readRDS(here::here("output", da_res_dir, "HSC_dev_da_lmm_df.rds"))
+df_de_ln <- df_de_ln[df_de_ln$ltsr > 0.9,]
+table(ifelse(df_de_ln$beta > 0, "up", "dn"))
+```
+
+get peak seq
+
+```{r}
+# DA peak GRanges
+df <- df_de_ln |> 
+  separate("gene", c("chr", "start", "end"))
+peak_da <- makeGRangesFromDataFrame(df, keep.extra.columns = TRUE)
+
+# peak seqs
+peak_seq <- getSeq(BSgenome.Hsapiens.UCSC.hg38, peak_da)
+length(peak_seq)
+```
+
+LMM res with GC content annotation (all tested)
+
+```{r}
+df_res <- readRDS(here::here("output", "HSC.dev_da_mc_CpG", "HSC_dev_da_peak_CGcontent_anno.rds"))
 head(df_res)
 ```
 
@@ -426,6 +448,49 @@ Filter
 se_df |> 
   filter(motif_id %in% rownames(df_motif_keep)) |> 
   write_tsv(file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.filt_by_exp.tsv"))
+```
+
+percentage of peaks containing enriched motifs
+
+```{r}
+pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
+pwms <- pwms[rownames(seSel)]
+
+hits <- findMotifHits(query = pwms, subject = peak_seq,
+                      min.score = 10.0,
+                      BPPARAM = BiocParallel::SerialParam())
+
+TFBSmatrix <- unclass(table(factor(seqnames(hits), levels = seqlevels(hits)),
+                            factor(hits$pwmid, levels = names(TFBSTools::name(pwms)))))
+TFBSmatrix[1:6, 1:6]
+```
+
+```{r}
+all(rownames(TFBSmatrix) == df_da$peak)
+```
+
+```{r}
+motif_count <- as.data.frame(t(rowsum(TFBSmatrix, group = df_da$sig))) |> 
+  rownames_to_column("motif_id") |> 
+  left_join(se_df |> 
+              dplyr::select(motif_id, motif_name), by = "motif_id") |> 
+  mutate(
+    percent_in_DA_up = `DA-up`/6662 * 100,
+    percent_in_DA_dn = `DA-down`/5211 * 100
+  ) |> 
+  dplyr::select(
+    motif_id, motif_name,
+    count_in_DA_up = `DA-up`,
+    percent_in_DA_up,
+    count_in_DA_down = `DA-down`,
+    percent_in_DA_dn
+  )
+head(motif_count)
+```
+
+```{r}
+motif_count |> 
+  write_tsv(file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.motif_count_pct.tsv"))
 ```
 
 ## Peak anno by PG links {.tabset}
