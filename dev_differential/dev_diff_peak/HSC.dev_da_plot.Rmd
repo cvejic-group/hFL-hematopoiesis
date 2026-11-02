@@ -321,50 +321,102 @@ df_motif2gene |>
   filter(motif_keep == FALSE)
 ```
 
-motif similarity
-
-```{r}
-seSel <- seSel[rownames(df_motif_keep),]
-SimMatSel <- motifSimilarity(rowData(seSel)$motif.pfm)
-range(SimMatSel)
-```
-
-seqlogo, motif similarity
-
-```{r fig.width=10, fig.height=10}
-# create hclust object, similarity defined by 1 - Pearson correlation
-hcl <- hclust(as.dist(1 - SimMatSel), method = "average")
-plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
-                  width = 2, cluster = hcl, maxEnr = 2, maxSig = NULL,
-                  show_dendrogram = TRUE,
-                  show_seqlogo = TRUE,
-                  width.seqlogo = 1.5,
-                row_names_gp = gpar(fontsize = 8))
-```
+#### no similarity
 
 maxSig = 10, show_dendrogram = FALSE
 
-```{r fig.width=8, fig.height=7}
+```{r fig.width=9, fig.height=7}
 plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
-                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  width = 2, cluster = TRUE, maxEnr = 2, maxSig = 10,
                   show_dendrogram = FALSE,
                   show_seqlogo = TRUE,
                   width.seqlogo = 1,
+                  show_bin_legend = TRUE,
                 row_names_gp = gpar(fontsize = 8))
 ```
 
-Save
+Save (no dend, no seqlogo)
 
-```{r fig.width=8, fig.height=7}
-pdf(here::here("output", DOCNAME, "HSC.dev_da_plot.monaLisa_TF.pdf"), width = 8, height = 7)
+```{r fig.width=9, fig.height=7}
+pdf(here::here("output", DOCNAME, "HSC.dev_da_plot.monaLisa_TF.pdf"), width = 9, height = 7)
 plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
-                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  width = 2, cluster = TRUE, maxEnr = 2, maxSig = 10,
                   show_dendrogram = FALSE,
-                  show_seqlogo = TRUE,
+                  show_seqlogo = FALSE,
                   width.seqlogo = 1,
+                  show_bin_legend = TRUE,
                 row_names_gp = gpar(fontsize = 8))
 invisible(dev.off())
 ```
+
+#### motif similarity
+
+motif similarity
+
+```{r}
+SimMatSel <- motifSimilarity(rowData(seSel)$motif.pfm)
+range(SimMatSel)
+
+# create hclust object, similarity defined by 1 - Pearson correlation
+hcl <- hclust(as.dist(1 - SimMatSel), method = "average")
+```
+
+```{r fig.width=9, fig.height=7}
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  show_dendrogram = TRUE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1,
+                  show_bin_legend = TRUE,
+                row_names_gp = gpar(fontsize = 8))
+```
+
+cut tree?
+
+```{r fig.width=10, fig.height=6}
+cut_tree_h <- .35
+plot(hcl)
+rect.hclust(hcl, h = cut_tree_h)
+```
+
+```{r fig.width=10, fig.height=6}
+cut_tree_h <- .3
+plot(hcl)
+rect.hclust(hcl, h = cut_tree_h)
+```
+
+row split
+
+```{r fig.width=9, fig.height=7}
+cl <- stats::cutree(hcl, h = cut_tree_h)
+
+plotMotifHeatmapsRowSplit(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  show_dendrogram = TRUE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1,
+                  show_bin_legend = TRUE,
+                row_names_gp = gpar(fontsize = 8),
+                row_split = cl,
+                row_title = NULL)
+```
+
+Save (with dend and seqlogo)
+
+```{r fig.width=9, fig.height=7}
+pdf(here::here("output", DOCNAME, "HSC.dev_da_plot.monaLisa_TF_dend.pdf"), width = 9, height = 7)
+plotMotifHeatmapsRowSplit(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
+                  width = 2, cluster = hcl, maxEnr = 2, maxSig = 10,
+                  show_dendrogram = TRUE,
+                  show_seqlogo = TRUE,
+                  width.seqlogo = 1,
+                  show_bin_legend = TRUE,
+                row_names_gp = gpar(fontsize = 8),
+                row_split = cl,
+                row_title = NULL)
+invisible(dev.off())
+```
+
 
 ### Tables
 
@@ -374,22 +426,6 @@ Filter
 se_df |> 
   filter(motif_id %in% rownames(df_motif_keep)) |> 
   write_tsv(file = here::here("output", DOCNAME, "HSC_DA_peak_monaLisa_sig_TF.filt_by_exp.tsv"))
-```
-
-### Proximal/distal
-
-```{r fig.width=5, fig.height=6}
-plotMotifHeatmaps(x = se2[rownames(df_motif_keep),], which.plots = c("log2enr", "negLog10Padj"),
-                maxEnr = 2, maxSig = 10,
-                cluster = TRUE, 
-                #show_motif_GC = TRUE,
-                width = 1.5,
-                row_names_gp = gpar(fontsize = 8))
-```
-
-```{r eval=FALSE, echo=FALSE}
-# the order of TFs
-x <- c("Nr1H2", "HSF1", "HSF2", "FOSL2::JUNB", "FOSL1::JUN", "FOSL2::JUN", "FOS::JUN", "FOS::JUND", "BACH1", "FOSB::JUNB", "FOS::JUNB", "FOSL2::JUND", "FOSL1::JUND", "FOSL1::JUNB", "FOSL1", "JUNB", "JUND", "BATF::JUN", "BNC2", "Atf3", "BATF", "Jun", "FOS", "JDP2", "BACH2", "NFE2", "NFIC", "NFIB", "NFIX", "RUNX3", "Runx1", "FOSL2::JUN", "FOS::JUN", "JUN::JUNB", "JUN::JUNB", "RFX2", "RFX5", "RFX1", "RFX3", "RUNX2", "NFYB", "Atf1", "NFYA", "NFYC")
 ```
 
 ### TF exp.
