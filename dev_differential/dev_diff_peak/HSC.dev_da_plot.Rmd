@@ -81,6 +81,7 @@ set.seed(12345)
 source(here::here("utils/preprocess.R"))
 #source(here::here("utils/markers.R"))
 source(here::here("utils/plot.R"))
+source(here::here("utils/plotMotifHeatmapsRowSplit.R"))
 theme_set(publ_theme)
 source("/work/DevM_analysis/utils/colors.R")
 ```
@@ -416,7 +417,6 @@ plotMotifHeatmapsRowSplit(x = seSel, which.plots = c("log2enr", "negLog10Padj"),
                 row_title = NULL)
 invisible(dev.off())
 ```
-
 
 ### Tables
 
