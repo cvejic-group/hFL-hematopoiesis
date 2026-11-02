@@ -357,7 +357,7 @@ d4p |>
   labs(x = "areaStat", y = "nCG")
 ```
 
-## DMR TF enrichment (2 bins)
+## DMR TF enrichment
 
 ```{r eval=FALSE}
 pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
@@ -391,57 +391,91 @@ sel2 <- apply(assay(se2, "negLog10Padj"), 1,
              function(x) max(abs(x), 0, na.rm = TRUE)) > 4.0
 sum(sel2)
 
-plotMotifHeatmaps(x = se2[sel2,], which.plots = c("log2enr", "negLog10Padj"), 
+seSel <- se2[sel2, ]
+seSel
+
+plotMotifHeatmaps(x = seSel, which.plots = c("log2enr", "negLog10Padj"), 
                   width = 1.8, cluster = TRUE, maxEnr = 2, maxSig = 10,
                   show_seqlogo = TRUE)
 ```
 
-## DMR TF enrichment
+### get tables
 
-```{r}
-lmrsel <- c(peakList$methy_up, peakList$methy_dn)
-lmrsel <- trim(resize(lmrsel, width = median(width(lmrsel)), fix = "center"))
-summary(width(lmrsel))
-
-# define binning vector
-bins <- bin(x = lmrsel$V7, binmode = "equalN", nElement = 2000, minAbsX = NULL)
-table(bins)
-```
-
-beta distribution
-
-```{r fig.width=10, fig.height=8}
-plotBinDensity(lmrsel$V7, bins, legend = "topright")
-```
+Enrichment result
 
 ```{r eval=FALSE}
-# extract sequences from the genome
-lmrseqs <- getSeq(BSgenome.Hsapiens.UCSC.hg38, lmrsel)
+# to data.frame
+df1 <- assay(seSel, "log2enr") |> 
+  as.data.frame()
+colnames(df1) <- paste0("log2enr_", colnames(df1))
+df2 <- assay(seSel, "negLog10Padj") |> 
+  as.data.frame()
+colnames(df2) <- paste0("negLog10Padj_", colnames(df2))
 
+# combine
+res_df <- do.call(cbind, unlist(Map(list, as.data.frame(df1), as.data.frame(df2)), recursive = FALSE))
+colnames(res_df) <- as.vector(rbind(colnames(df1), colnames(df2)))
+res_df <- as.data.frame(res_df)
+
+# add motif_id and motif_names
+res_df$motif_id <- as.data.frame(rowData(seSel))$motif.id
+res_df$motif_name <- as.data.frame(rowData(seSel))$motif.name
+res_df <- res_df |> 
+  dplyr::select(motif_id, motif_name, everything())
+
+res_df |> 
+  write_tsv(file = here::here("output", DOCNAME, "DSS_DMR_monaLisa_TF_sig_TF.tsv"))
+```
+
+percentage of peaks containing enriched motifs
+
+```{r}
+# motifs
 pwms <- readRDS(here::here("data/JASPAR2024_pwms.rds"))
-se <- calcBinnedMotifEnrR(seqs = lmrseqs, bins = bins,
-                           pwmL = pwms)
-se
+pwms <- pwms[rownames(seSel)]
 
-saveRDS(se, file = here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa.rds"))
+# hits
+hits <- findMotifHits(query = pwms, subject = lmrseqs2,
+                      min.score = 10.0,
+                      BPPARAM = BiocParallel::SerialParam())
+
+# to mat
+TFBSmatrix <- unclass(table(factor(seqnames(hits), levels = seqlevels(hits)),
+                            factor(hits$pwmid, levels = names(TFBSTools::name(pwms)))))
+TFBSmatrix[1:6, 1:6]
+dim(TFBSmatrix)
+```
+
+get group
+
+```{r}
+# get bin
+bins2 <- rep(c("up", "dn"), c(length(peakList$methy_up), length(peakList$methy_dn)))
+table(bins2)
 ```
 
 ```{r}
-se <- readRDS(here::here("output", DOCNAME, "bs_5mC.DSS_DMR_p005_monaLisa.rds"))
-se
+motif_count <- as.data.frame(t(rowsum(TFBSmatrix, group = bins2))) |> 
+  rownames_to_column("motif_id") |> 
+  left_join(res_df |> 
+              dplyr::select(motif_id, motif_name), by = "motif_id") |> 
+  mutate(
+    percent_in_up = dn/4989 * 100,
+    percent_in_dn = up/14932 * 100
+  ) |> 
+  dplyr::select(
+    motif_id, motif_name,
+    up,
+    percent_in_up,
+    dn,
+    percent_in_dn
+  )
+head(motif_count)
 ```
 
-big imbalance between up- and dn- DMRs
-
-```{r fig.width=8, fig.height=15}
-sel <- apply(assay(se, "negLog10Padj"), 1, 
-             function(x) max(abs(x), 0, na.rm = TRUE)) > 4.0
-sum(sel)
-
-plotMotifHeatmaps(x = se[sel,], which.plots = c("log2enr", "negLog10Padj"), 
-                  width = 1.8, cluster = TRUE,
-                  #maxEnr = 2, maxSig = 10,
-                  show_seqlogo = TRUE)
+```{r}
+motif_count |> 
+  write_tsv(file = here::here("output", DOCNAME, "DSS_DMR_monaLisa_TF.motif_count_pct.tsv"))
 ```
 
 ## Session info
