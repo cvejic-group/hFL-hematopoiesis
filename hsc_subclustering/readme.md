@@ -32,5 +32,7 @@ This folder contains the HSC-focused subclustering pipeline for fetal liver mult
 
 - `11.compsotion_Poisson.Rmd` — Poisson composition modeling
 
-- `12.dev_de_lmm_subcluster.R` and `12.dev_de_lmm_subcluster.Rmd`: run linear mixed model differential analysis per subcluster.
+- `12.dev_de_lmm_subcluster.R` and `12.dev_de_lmm_subcluster.Rmd`: run differential gene expression analysis per subcluster.
+
+- `13.dev_da_lmm_subcluster.R` and `13.dev_da_lmm_subcluster.Rmd`: run differential accessible peak analysis per subcluster.
 

@@ -3,10 +3,8 @@ title: "HSC.dev_de_lmm_subcluster"
 author: "Yiwei Niu"
 ---
 
-- Run `12.dev_de_lmm_subcluster.R` first
-
 ```{r knitr, include = FALSE}
-DOCNAME <- "HSC.dev_de_lmm_subcluster"
+DOCNAME <- "HSC.sub.dev_de_lmm"
 dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
 
 NOW <- Sys.time()
@@ -39,7 +37,7 @@ knitr::opts_chunk$set(
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
-library(data.table)
+library(glue)
 
 # plot
 library(ggsci)
@@ -96,8 +94,8 @@ meta
 
 ```{r}
 mdata <- readRDS(here::here("output", dev_de_dir, "mdata.rds"))
-srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_HSC_PCW250401/data/FL_rna_clustered.rds")
-table(srat$PCW, useNA = "ifany")
+#srat <- readRDS("/work/DevM_analysis/02.abundance/Milo_FL_HSC_PCW250401/data/FL_rna_clustered.rds")
+table(mdata$PCW, useNA = "ifany")
 ```
 
 LMM
@@ -158,8 +156,7 @@ up
 up_lst$HSC <- df_de_sig |> filter(beta > 0) |> pull(gene)
 dn_lst$HSC <- df_de_sig |> filter(beta < 0) |> pull(gene)
 
-p1 <- ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 24)
-p1
+ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 24)
 
 ggsave2(
   filename = here::here("output", DOCNAME, "HSC-subcluster-dev-DEGs-up-olp.pdf"),
@@ -180,7 +177,7 @@ ggsave2(
 
 ## Cmp. with HSC-DEGs
 
-```{r fig.width=7.5, fig.height=5}
+```{r fig.width=12, fig.height=2.5}
 d4p <- de_df |> 
   pivot_wider(id_cols = "gene", names_from = "celltype", values_from = c("beta", "ltsr")) |> 
   left_join(df_de, by = "gene")
@@ -193,15 +190,129 @@ p <- lapply(paste0("HSC-", c(0:4)), function(i) {
     geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
     geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
     stat_cor() +
-    labs(x = "Beta of all HSC", y = paste0("Beta of ", i)) +
+    labs(x = "Beta of all HSC (RNA)", y = glue("Beta of {i} (RNA)")) +
     publ_theme
 }) |> 
-  wrap_plots(ncol = 3)
+  wrap_plots(ncol = 5)
 p
 
 ggsave2(
   filename = here::here("output", DOCNAME, "HSC-subcluster-dev-beta-vs-HSC-altogether.pdf"),
-  width = 7.5, height = 5
+  width = 12, height = 2.5
+)
+```
+
+## HSC-1
+
+Olp of DEGs between HSC-1 and HSC
+
+```{r fig.width=3, fig.height=3}
+new_lst <- list(
+  HSC_up = up_lst$HSC,
+  HSC_dn = dn_lst$HSC,
+  HSC_1_up = up_lst$HSC_1,
+  HSC_1_dn = dn_lst$HSC_1
+)
+
+p1_venn <- ggVennDiagram(new_lst, force_upset = TRUE, nintersects = 7,
+                         relative_width = .4)
+p1_venn
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-1.vs.HSC-dev-DEGs-olp.pdf"),
+  width = 3, height = 3
+)
+```
+
+HSC-1 vs. HSC (beta)
+
+```{r, fig.width=5, fig.height=4}
+venn_y <- Venn(new_lst)
+
+type_colors_semantic <- c(
+  # Upregulated (Warm tones: Dark Red, Vermilion/Orange, Gold)
+  "Up in both HSC and HSC-1" = "#BB0021", # Deep Crimson (strongest emphasis)
+  "Up in HSC"                = "#E69F00", # Orange
+  "Up in HSC-1"              = "#F0E442", # Bright Yellow / Gold (or "#EE7733" for darker backgrounds)
+
+  # Downregulated (Cool tones: Navy Blue, Sky Blue, Purple)
+  "Dn in both HSC and HSC-1" = "#004488", # Dark Navy Blue (strongest emphasis)
+  "Dn in HSC"                = "#56B4E9", # Sky Blue
+  "Dn in HSC-1"              = "#AA3377", # Muted Purple / Magenta
+
+  # Not significant
+  "n.s."                     = "#D9D9D9" # Light Grey (recedes into background)
+)
+
+dat <- d4p |>
+  mutate(
+    Type = case_when(
+    gene %in% overlap(venn_y, c("HSC_up", "HSC_1_up")) ~ "Up in both HSC and HSC-1",
+    gene %in% discern(venn_y, "HSC_up") ~ "Up in HSC",
+    gene %in% discern(venn_y, "HSC_1_up") ~ "Up in HSC-1",
+    gene %in% overlap(venn_y, c("HSC_dn", "HSC_1_dn")) ~ "Dn in both HSC and HSC-1",
+    gene %in% discern(venn_y, "HSC_dn") ~ "Dn in HSC",
+    gene %in% discern(venn_y, "HSC_1_dn") ~ "Dn in HSC-1",
+    TRUE ~ "n.s."
+  ),
+  Type = factor(Type, levels = names(type_colors_semantic))) |>
+  slice_sample(prop = 1)
+
+p1_beta_color <- dat |>
+  ggplot(aes(x = beta, y = `beta_HSC-1`, color = Type)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  stat_cor(aes(group = 1)) +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = type_colors_semantic) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(x = "Beta of all HSC (RNA)", y = "Beta of HSC-1 (RNA)")
+p1_beta_color
+```
+
+```{r, fig.width=4, fig.height=4}
+p1_beta <- dat |>
+  ggplot(aes(x = beta, y = `beta_HSC-1`)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  stat_cor() +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  #scale_color_manual(values = type_colors_semantic) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(x = "Beta of all HSC (RNA)", y = "Beta of HSC-1 (RNA)")
+p1_beta
+```
+
+number of DEGs vs. metacell number
+
+```{r fig.width=4, fig.height=4}
+d4p <- data.frame(
+  test = str_replace(names(up_lst), "_", "-"),
+  n_dar = lengths(dn_lst) + lengths(up_lst),
+  n_c = c(table(mdata$celltype), nrow(mdata))
+)
+
+p_power <- d4p |> 
+  ggplot(aes(x = n_c, y = n_dar)) +
+  geom_point() +
+  stat_cor() +
+  geom_text_repel(aes(label = test), min.segment.length = 0) +
+  labs(x = "Number of cells", y = "Number of total DEGs")
+p_power
+```
+
+### Align
+
+```{r fig.width=9, fig.height=3}
+plot_grid(p1_venn, p1_beta, p_power, nrow = 1,
+          rel_widths = c(3, 3, 3),
+          labels="auto")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-1.vs.HSC-venn-beta-power.pdf"),
+  width = 9, height = 3
 )
 ```
 
@@ -241,10 +352,42 @@ res_ora <- cmp_enrichment_multi(
 # Warning: 8.86% of input gene IDs are fail to map
 ```
 
+#### GO-BP
+
+```{r , fig.width=4, fig.height=6}
+outprefix <- "HSC_subtype_dev_de_up"
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
+
+if (file.exists(fname)) {
+  cg.BP <- readRDS(fname)
+p <- dotplot(cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40), position = "right") +
+  #scale_x_discrete(labels = c("Up-regulated", "Down-regulated")) +
+  labs(x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-deg-up.ORA_GO-BP.pdf"),
+  width = 4, height = 6
+)
+}
+```
+
+simplify
+
+```{r , fig.width=8, fig.height=8}
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
 #### Hallmark
 
 ```{r , fig.width=8, fig.height=5}
-outprefix <- "HSC_subtype_dev_de_up"
 fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Hallmark.rds"))
 
 if (file.exists(fname)) {
@@ -276,26 +419,6 @@ if (file.exists(fname)) {
   dotplot(cr, showCategory = 10) + 
     scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
 }
-```
-
-#### GO-BP
-
-```{r , fig.width=8, fig.height=8}
-fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
-
-if (file.exists(fname)) {
-  cg.BP <- readRDS(fname)
-  dotplot(cg.BP, showCategory = 10) + 
-    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
-}
-```
-
-simplify
-
-```{r , fig.width=8, fig.height=8}
-p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
-p
 ```
 
 ### Dn {.tabset}
@@ -322,10 +445,42 @@ res_ora <- cmp_enrichment_multi(
 # Warning: 1.38% of input gene IDs are fail to map...
 ```
 
+#### GO-BP
+
+```{r , fig.width=4, fig.height=6}
+outprefix <- "HSC_subtype_dev_de_dn"
+fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
+
+if (file.exists(fname)) {
+  cg.BP <- readRDS(fname)
+p <- dotplot(cg.BP, showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40), position = "right") +
+  #scale_x_discrete(labels = c("Up-regulated", "Down-regulated")) +
+  labs(x = NULL) +
+  publ_theme +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size = .5))
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-deg-dn.ORA_GO-BP.pdf"),
+  width = 4, height = 6
+)
+}
+```
+
+simplify
+
+```{r , fig.width=8, fig.height=8}
+p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
+p
+```
+
 #### Hallmark
 
 ```{r , fig.width=9, fig.height=5}
-outprefix <- "HSC_subtype_dev_de_dn"
 fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_Hallmark.rds"))
 
 if (file.exists(fname)) {
@@ -357,26 +512,6 @@ if (file.exists(fname)) {
   dotplot(cr, showCategory = 10) + 
     scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
 }
-```
-
-#### GO-BP
-
-```{r , fig.width=8, fig.height=8}
-fname <- here::here("output", DOCNAME, paste0(outprefix, ".ORA_GOBP.rds"))
-
-if (file.exists(fname)) {
-  cg.BP <- readRDS(fname)
-  dotplot(cg.BP, showCategory = 10) + 
-    scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
-}
-```
-
-simplify
-
-```{r , fig.width=8, fig.height=8}
-p <- dotplot(simplify(cg.BP, cutoff = 0.5), showCategory = 10) + 
-  scale_y_discrete(labels = function(x) str_wrap(x, width = 50))
-p
 ```
 
 ## Session info

@@ -1,0 +1,358 @@
+---
+title: "HSC.sub.dev_da_lmm"
+author: "Yiwei Niu"
+---
+
+```{r knitr, include = FALSE}
+DOCNAME <- "HSC.sub.dev_da_lmm"
+dir.create(here::here("output", DOCNAME), showWarnings = FALSE)
+
+NOW <- Sys.time()
+# Time chunks during knitting
+knitr::knit_hooks$set(timeit = function(before) {
+  if (before) {
+    print(paste("Start:", Sys.time()))
+    NOW <<- Sys.time()
+  } else {
+    print(paste("Stop:", Sys.time()))
+    print(Sys.time() - NOW)
+  }
+})
+
+knitr::opts_chunk$set(
+  autodep        = TRUE,
+  cache          = FALSE,
+  cache.lazy     = FALSE,
+  cache.comments = FALSE,
+  echo           = TRUE,
+  error          = FALSE,
+  fig.align      = "center",
+  fig.width      = 10,
+  fig.height     = 8,
+  message        = FALSE,
+  warning        = FALSE,
+  timeit         = TRUE
+)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(glue)
+
+# plot
+library(ggsci)
+library(RColorBrewer)
+library(scales)
+library(ComplexHeatmap)
+library(pheatmap)
+library(scattermore)
+library(ggrastr)
+library(ggrepel)
+library(ggpubr)
+library(patchwork)
+library(cowplot)
+mytheme <- theme_cowplot(
+  font_size = 10,
+  rel_small = 8 / 10,
+  rel_tiny = 8 / 10,
+  rel_large = 10 / 10
+)
+
+# specific
+# library(Seurat)
+
+# ORA
+# library(clusterProfiler)
+# library(org.Hs.eg.db)
+# #library(msigdbr)
+# library(enrichR)
+
+# misc
+library(UpSetR)
+library(ggVennDiagram)
+
+# set random seed for reproducibility
+set.seed(12345)
+```
+
+```{r source, cache = FALSE}
+# source(here::here("utils/preprocess.R"))
+source(here::here("utils/markers.R"))
+source(here::here("utils/plot.R"))
+source(here::here("utils/functional_enrichment.R"))
+theme_set(publ_theme)
+source("/work/DevM_analysis/utils/colors.R")
+```
+
+## Load data
+
+LMM for all
+
+```{r}
+df_de <- readRDS(here::here("output", "HSC.dev_da_lmm_mc_scale", "HSC_dev_da_lmm_df.rds"))
+df_de_sig <- df_de[df_de$ltsr > 0.9, ]
+table(ifelse(df_de_sig$beta > 0, "up", "dn"))
+```
+
+LMM for each subcluster
+
+```{r}
+de_lst <- lapply(0:4, function(i) {
+  ct <- paste0("HSC-", i)
+  readRDS(here::here("output", DOCNAME, paste0(ct, "_dev_da_lmm_df.rds"))) |>
+    mutate(celltype = ct)
+})
+de_df <- do.call(rbind, de_lst)
+
+# LTSR > 0.9
+de_df_sig <- de_df[de_df$ltsr > 0.9, ]
+table(de_df_sig$celltype)
+```
+
+HSC-1 peak detected fraction
+
+```{r}
+pm_hsc_1 <- qs::qread(here::here("output/HSC.metacell_subcluster/HSC-1.pm.qs"))
+peak_frac_detected <- Matrix::rowSums(pm_hsc_1 > 0)/ncol(pm_hsc_1)
+df_peak_frac_detected <- data.frame(
+  gene = names(peak_frac_detected),
+  frac_detected = peak_frac_detected
+)
+head(df_peak_frac_detected)
+```
+
+## Overlap
+
+up
+
+```{r fig.width=8, fig.height=5}
+up_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta > 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta > 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta > 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta > 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta > 0, celltype == "HSC-4") |> pull(gene)
+)
+dn_lst <- list(
+  HSC_0 = de_df_sig |> filter(beta < 0, celltype == "HSC-0") |> pull(gene),
+  HSC_1 = de_df_sig |> filter(beta < 0, celltype == "HSC-1") |> pull(gene),
+  HSC_2 = de_df_sig |> filter(beta < 0, celltype == "HSC-2") |> pull(gene),
+  HSC_3 = de_df_sig |> filter(beta < 0, celltype == "HSC-3") |> pull(gene),
+  HSC_4 = de_df_sig |> filter(beta < 0, celltype == "HSC-4") |> pull(gene)
+)
+ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 30)
+```
+
+Overlap dn
+
+```{r fig.width=8, fig.height=5}
+ggVennDiagram(dn_lst, force_upset = TRUE, nintersects = 30)
+```
+
+## Olp (with all HSC)
+
+up (show only intersections with > 50 peaks)
+
+```{r fig.width=6, fig.height=4}
+up_lst$HSC <- df_de_sig |>
+  filter(beta > 0) |>
+  pull(gene)
+dn_lst$HSC <- df_de_sig |>
+  filter(beta < 0) |>
+  pull(gene)
+
+p1 <- ggVennDiagram(up_lst, force_upset = TRUE, nintersects = 17)
+p1
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-DARs-up-olp.pdf"),
+  width = 6, height = 4
+)
+```
+
+Overlap dn (show only intersections with > 50 peaks)
+
+```{r fig.width=6, fig.height=4}
+p2 <- ggVennDiagram(dn_lst, force_upset = TRUE, nintersects = 14)
+p2
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-DARs-down-olp.pdf"),
+  width = 6, height = 4
+)
+```
+
+## Cmp. with HSC-DARs
+
+```{r fig.width=12, fig.height=2.5}
+d4p <- de_df |>
+  pivot_wider(id_cols = "gene", names_from = "celltype", values_from = c("beta", "ltsr")) |>
+  left_join(df_de, by = "gene")
+
+p <- lapply(paste0("HSC-", c(0:4)), function(i) {
+  y_col <- paste0("beta_", i)
+  d4p |>
+    ggplot(aes(x = beta, y = .data[[y_col]])) +
+    ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+    stat_cor() +
+    labs(x = "Beta of all HSC (ATAC)", y = glue("Beta of {i} (ATAC)")) +
+    publ_theme
+}) |>
+  wrap_plots(ncol = 5)
+p
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-subcluster-dev-beta-vs-HSC-altogether.pdf"),
+  width = 12, height = 2.5
+)
+```
+
+## HSC-1
+
+Olp of DARs between HSC-1 and HSC
+
+```{r fig.width=3, fig.height=3}
+new_lst <- list(
+  HSC_up = up_lst$HSC,
+  HSC_dn = dn_lst$HSC,
+  HSC_1_up = up_lst$HSC_1,
+  HSC_1_dn = dn_lst$HSC_1
+)
+
+p1_venn <- ggVennDiagram(new_lst, force_upset = TRUE, nintersects = 6,
+                         relative_width = .4)
+p1_venn
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-1.vs.HSC-dev-DARs-olp.pdf"),
+  width = 3, height = 3
+)
+```
+
+HSC-1 vs. HSC (beta)
+
+```{r, fig.width=5, fig.height=4}
+venn_y <- Venn(new_lst)
+
+type_colors_semantic <- c(
+  # Upregulated (Warm tones: Dark Red, Vermilion/Orange, Gold)
+  "Up in both HSC and HSC-1" = "#BB0021", # Deep Crimson (strongest emphasis)
+  "Up in HSC"                = "#E69F00", # Orange
+  "Up in HSC-1"              = "#F0E442", # Bright Yellow / Gold (or "#EE7733" for darker backgrounds)
+
+  # Downregulated (Cool tones: Navy Blue, Sky Blue, Purple)
+  "Dn in both HSC and HSC-1" = "#004488", # Dark Navy Blue (strongest emphasis)
+  "Dn in HSC"                = "#56B4E9", # Sky Blue
+  "Dn in HSC-1"              = "#AA3377", # Muted Purple / Magenta
+
+  # Not significant
+  "n.s."                     = "#D9D9D9" # Light Grey (recedes into background)
+)
+
+dat <- d4p |>
+  mutate(
+    Type = case_when(
+    gene %in% overlap(venn_y, c("HSC_up", "HSC_1_up")) ~ "Up in both HSC and HSC-1",
+    gene %in% discern(venn_y, "HSC_up") ~ "Up in HSC",
+    gene %in% discern(venn_y, "HSC_1_up") ~ "Up in HSC-1",
+    gene %in% overlap(venn_y, c("HSC_dn", "HSC_1_dn")) ~ "Dn in both HSC and HSC-1",
+    gene %in% discern(venn_y, "HSC_dn") ~ "Dn in HSC",
+    gene %in% discern(venn_y, "HSC_1_dn") ~ "Dn in HSC-1",
+    TRUE ~ "n.s."
+  ),
+  Type = factor(Type, levels = names(type_colors_semantic))) |>
+  slice_sample(prop = 1)
+
+p1_beta_color <- dat |>
+  ggplot(aes(x = beta, y = `beta_HSC-1`, color = Type)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  stat_cor(aes(group = 1)) +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = type_colors_semantic) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(x = "Beta of all HSC (ATAC)", y = "Beta of HSC-1 (ATAC)")
+p1_beta_color
+```
+
+
+```{r, fig.width=4, fig.height=4}
+p1_beta <- dat |>
+  ggplot(aes(x = beta, y = `beta_HSC-1`)) +
+  ggrastr::rasterize(geom_point(size = .5, stroke = 0), dpi = 600) +
+  stat_cor() +
+  geom_abline(slope = 1, linetype = "dashed", color = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray") +
+  #scale_color_manual(values = type_colors_semantic) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  labs(x = "Beta of all HSC (ATAC)", y = "Beta of HSC-1 (ATAC)")
+p1_beta
+```
+
+what about detection rate?
+
+```{r fig.width=3, fig.height=4}
+dat |> 
+  left_join(df_peak_frac_detected, by = "gene") |> 
+  ggplot(aes(x = Type, y = peak_frac_detected, fill = Type)) +
+  geom_boxplot(outlier.size = 0.1, outlier.alpha = 0.3) +
+  scale_color_manual(values = type_colors_semantic) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none")
+```
+
+number of DARs vs. metacell number
+
+```{r fig.width=4, fig.height=4}
+n_mc <- c(
+  qs::qread(here::here("output", "HSC.metacell_subcluster", "HSC-0.mdata.qs")) |> pull(mc_group) |> unique() |> length(),
+  qs::qread(here::here("output", "HSC.metacell_subcluster", "HSC-1.mdata.qs")) |> pull(mc_group) |> unique() |> length(),
+  qs::qread(here::here("output", "HSC.metacell_subcluster", "HSC-2.mdata.qs")) |> pull(mc_group) |> unique() |> length(),
+  qs::qread(here::here("output", "HSC.metacell_subcluster", "HSC-3.mdata.qs")) |> pull(mc_group) |> unique() |> length(),
+  qs::qread(here::here("output", "HSC.metacell_subcluster", "HSC-4.mdata.qs")) |> pull(mc_group) |> unique() |> length(),
+  qs::qread(here::here("output", "HSC.metacell", "mdata.qs")) |> pull(mc_group) |> unique() |> length()
+)
+
+d4p <- data.frame(
+  test = str_replace(names(up_lst), "_", "-"),
+  n_dar = lengths(dn_lst) + lengths(up_lst),
+  n_mc = n_mc
+)
+
+p_power <- d4p |> 
+  ggplot(aes(x = n_mc, y = n_dar)) +
+  geom_point() +
+  stat_cor() +
+  geom_text_repel(aes(label = test), min.segment.length = 0) +
+  labs(x = "Number of metacells", y = "Number of total DARs")
+p_power
+```
+
+### Align
+
+```{r fig.width=9, fig.height=3}
+plot_grid(p1_venn, p1_beta, p_power, nrow = 1,
+          rel_widths = c(3, 3, 3),
+          labels="auto")
+
+ggsave2(
+  filename = here::here("output", DOCNAME, "HSC-1.vs.HSC-venn-beta-power.pdf"),
+  width = 9, height = 3
+)
+```
+
+## DARs {.tabset}
+
+DARs of all subtypes
+
+```{r}
+de_df_sig |>
+  pivot_wider(id_cols = "gene", names_from = "celltype", values_from = c("beta", "ltsr")) |>
+  DT::datatable(rownames = FALSE)
+```
+
+## Session info
