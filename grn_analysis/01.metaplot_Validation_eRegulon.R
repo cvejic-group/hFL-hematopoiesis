@@ -43,7 +43,7 @@ bw_dir <- "~/RefData/ChIPseq/GSE231422/"
 
 # Metaplots setup
 CT <- "HSC"
-TF.v <- c("ERG", "FLI1", "GATA2", "LMO2", "LYL1", "RUNX1", "TAL1")
+TF.v <- c("ERG", "FLI1", "GATA2", "LMO2", "LYL1", "RUNX1", "TAL1", "PU1")
 
 #####################
 # Generate metaplot #
