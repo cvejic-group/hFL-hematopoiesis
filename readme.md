@@ -26,7 +26,6 @@ Expected install time: < 1 minute.
   * 03.scDblFinder
   * 04.qc
   * 05.infercnv
-
 * `annotation`: cell type annotation
   * 01.wnn_anno
   * 02.multivi
@@ -35,54 +34,42 @@ Expected install time: < 1 minute.
     * preprocess
     * [scavenge-smk-pipeline](https://github.com/cvejic-group/scavenge-smk-devmult)
     * analysis
-
+* `grn_analysis`: gene regulatory network (GRN) analysis with SCENIC+ and XGBoost model
+  * scenicplus
+  * celltype_resolved_grn
+  * B_lineage_demonstration: A detailed demonstration of our eGRN analysis within B lineage
+* `query_mapping`: mapping FL HSC to AGM data from [Calvanese et al. 2022, Nature](https://www.nature.com/articles/s41586-022-04571-x)
 * `cell_abundance`: developmental changes in cell composition
   * milo
   * glmm
-
 * `trajectory`: trajectory inference
   * moscot_temporal
   * multivi_diffusion
   * paga
-
 * `cell_cycle`: cell-cycle related analysis
   * 01.qHSC
   * 02.Dynamic_CC_modeling
-
 * `peak_gene_links`: identification of peak-gene links
-
 * `dev_differential`: developmental effects on chromatin accessibility and gene expression
-  * dev_diff_peak
-  * dev_diff_gene
-
+  * dev_diff_peak: developmental effects on chromatin accessibility
+  * dev_diff_gene: developmental effects on gene expression
+  * dev_diff_eRegulon: developmental effects on SCENIC+ eRegulons
 * `hsc_subclustering`: explore the heterogeneity within HSCs
-
-* `gwas_enrichment`: GWAS signal enrichment using cell type-resolved regulatory elements
-  * sldsc
-  * magama
-
-* `DNAm`: DNA methylation data analysis
-
 * `tf_footprinting`: TF footprint identification with ChromBPNet, TF-MoDISCo, and Fi-NeMo
   * [chrombpnet-smk-pipeline](https://github.com/cvejic-group/chrombpnet-smk-devmult)
   * postprocess
   * analysis
   * [tobias-smk-pipeline](https://github.com/cvejic-group/tobias-smk-devmult)
-
-* `query_mapping`: Mapping FL HSC to AGM data from [Calvanese et al. 2022, Nature](https://www.nature.com/articles/s41586-022-04571-x)
-
-* `grn_analysis`: gene regulatory network (GRN) analysis with SCENIC+ and XGBoost model
-  * scenicplus
-  * celltype_resolved_grn
-  * dev_diff_eRegulon: developmental effects on SCENIC+ eRegulons.
-  * B_lineage_demonstration: A detailed demonstration of our eGRN analysis within B lineage.
-
+* `DNAm`: DNA methylation data analysis
+* `gwas_enrichment`: GWAS signal enrichment using cell type-resolved regulatory elements
+  * sldsc
+  * magama
+* `lihi-c`: low-input Hi-C data processing
 * `misc`
   * variancePartition: variance partition analysis
   * cNMF: consensus non-negative matrix factorization
   * bam_frag_per_cell: generate BAM/fragment files for each cell type
-
-* `utils`: small utilities, color palette
+* `utils`: small utilities, and color palette
 
 
 

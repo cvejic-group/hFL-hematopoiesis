@@ -24,6 +24,8 @@ The LMM method was first described by [Young et al. 2021](https://www.nature.com
   - `HSC.dev_da_CpG.Rmd`: GC content check of differential peaks
   - `HSC.dev_da_monaLisa.Rmd`: TF motif enrichment
   - `HSC.dev_da_plot.Rmd`: visualization
+- `dev_diff_eRegulon`: This folder contains code for developmental differential analysis of HSCs using 
+  linear mixed models (LMM) on +/+ activator eRegulons.
 
 ## Notes
 

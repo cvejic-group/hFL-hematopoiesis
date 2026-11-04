@@ -1,0 +1,6 @@
+{
+  "work_dir": "/data1/offitk/mardera1/data/disomy_lihic_manuscript",
+  "fasta": "/data1/offitk/mardera1/data/hg38_refs/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta",
+  "threads": 16,
+  "java_heap": "48g"
+}

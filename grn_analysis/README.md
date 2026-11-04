@@ -10,8 +10,6 @@ Please follow the office SCENIC+ and pycisTopic guidance sites: [read the docs p
 - `celltype_resolved_grn`: This folder contains code for converting the **raw SCENIC+ eRegulon set** into
 **cell type-resolved eRegulons (CT-eRegulons)**. It corresponds to the *"Cell type-resolved eRegulon construction"* and
 *"Cross-cell-type differential target analysis of CT-eRegulons"* sections in Methods.
-- `dev_diff_eRegulon`: This folder contains code for developmental differential analysis of HSCs using 
-linear mixed models (LMM) on +/+ activator eRegulons.
 - `pycisTopic_distal_only`: This folder contains code for running pycisTopic on distal regions only.
 - `Scripts`: 
   * `01.metaplot_Validation_eRegulon.R`: This script contains code for validating eRegulon regions using [public ChIp-seq data](https://ashpublications.org/blood/article/142/17/1448/497482/Genome-wide-transcription-factor-binding-maps).
