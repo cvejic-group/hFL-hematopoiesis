@@ -460,8 +460,8 @@ motif_count <- as.data.frame(t(rowsum(TFBSmatrix, group = bins2))) |>
   left_join(res_df |> 
               dplyr::select(motif_id, motif_name), by = "motif_id") |> 
   mutate(
-    percent_in_up = dn/4989 * 100,
-    percent_in_dn = up/14932 * 100
+    percent_in_dn = dn/4989 * 100,
+    percent_in_up = up/14932 * 100
   ) |> 
   dplyr::select(
     motif_id, motif_name,

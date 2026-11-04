@@ -272,11 +272,11 @@ plot_ldsc_pheatmap(
   labels_col = df_traits2$pheno_label)
 ```
 
-Only show sig. ones (no endothelia)
+Only show sig. ones (no endothelia, hepatocyte)
 
 ```{r fig.width=4, fig.height=4}
 df2 <- df_res_d2 |> 
-  filter(Name != "Endothelia") |> 
+  filter(Name != "Endothelia", Name != "Hepatocyte") |> 
   droplevels()
 
 plot_ldsc_pheatmap(

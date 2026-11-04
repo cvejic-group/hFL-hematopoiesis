@@ -152,9 +152,9 @@ srat@meta.data |>
   geom_density()
 ```
 
-## Sep by usage? {.tabset}
+## Sep by GEP3 usage {.tabset}
 
-### GEP3 usage > 0.5
+GEP3 usage > 0.5
 
 ```{r fig.width=10, fig.height=5}
 srat@meta.data <- srat@meta.data |>
@@ -202,95 +202,6 @@ p <- d4p |>
   geom_col() +
   scale_fill_manual(values = c('G0'='#984EA3','G1'='#1f77b4','S'='#ff7f0e','G2M'='#2ca02c')) +
   labs(x = "PCW", y = "Proportion (%)") +
-  theme(panel.background = element_blank(),
-        panel.border = element_rect(fill = NA, color = 'black', linewidth = 0.3),
-        legend.key = element_rect(fill = NA,linewidth = 0.3)) +
-  labs(fill = "CC Phase")
-p
-```
-
-```{r fig.width=10, fig.height=4}
-q_markers <- c('NKAIN2','HIF1A','MLLT3','HLF','MECOM','MEIS1','ANGPT1','HMGA2','MSI2','ITGA6','CLEC9A','HOXA9','PRMT1','CTNNB1','GPRC5C','TFEB','CUX1','HOXB5','CDK6','YY1','ATP2B1','ZNHIT1','PROM1','PBX1','RORA','MYC','VNN2','NECTIN2','PMCA','NFE2L2','ID1', 'ID3', 'AHR', 'TIPARP','HES1','RGCC')
-c_markers <- c('MKI67','TOP2A','HELLS','NASP','CENPF')
-
-DotPlot(srat, features = c(q_markers, c_markers),group.by = 'PhaseNew') +
-  labs(y='CC Phases') +
-  theme_cowplot() + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
-```
-
-## GEP3 module score?
-
-only in G1
-
-```{r}
-srat_g1 <- subset(srat, subset = Phase == "G1")
-srat_g1 <- AddModuleScore(srat_g1,
-  features = list(topgenes$GEP3[1:100]),
-  seed = 1,
-  search = TRUE,
-  slot = "data"
-)
-
-dat <- srat_g1@meta.data |>
-  rownames_to_column("barcode") |>
-  dplyr::select(barcode, Cluster1)
-```
-
-on UMAP
-
-```{r fig.width=10, fig.height=5}
-x <- dat$Cluster1
-p_right <- 1 - pnorm(x, mean = mean(x), sd = sd(x))
-cluster <- ifelse(p_right < 0.05, 1, 0)
-
-dat$test <- cluster
-srat@meta.data <- srat@meta.data |>
-  rownames_to_column("barcode") |>
-  dplyr::select(-starts_with("test")) |>
-  left_join(dat |> dplyr::select(barcode, test), by = "barcode") |>
-  mutate(PhaseNew = case_when(
-    test == 1 & Phase == "G1" ~ "G0",
-    TRUE ~ Phase
-  )) |>
-  mutate(PhaseNew = factor(PhaseNew, levels = c("G0", "G1", "S", "G2M"))) |> 
-  column_to_rownames("barcode")
-table(srat$PhaseNew)
-
-cells.highlight <- srat@meta.data |>
-  rownames_to_column("barcode") |>
-  filter(PhaseNew == "G0") |>
-  pull(barcode)
-p1 <- DimPlot(srat, reduction = "mvi.umap", cells.highlight = cells.highlight) +
-  NoLegend()
-p2 <- DimPlot(srat, reduction = "wnn.umap", cells.highlight = cells.highlight) +
-  NoLegend()
-p1 + p2
-```
-
-```{r fig.width=5, fig.height=4}
-barcode_lst <- list(
-  G0_byGEP3 = cells.highlight,
-  G0_byBM_LT = G0_barcodes
-)
-
-p1 <- ggvenn(barcode_lst, set_name_size = 4)
-p1
-```
-
-```{r fig.width=7, fig.height=4}
-d4p <- srat@meta.data |> filter(PCW != 'Mixed') |> 
-  group_by(PCW, PhaseNew) |> 
-  summarize(count = n()) |>
-  mutate(prop = count / sum(count) * 100)
-d4p |> 
-  DT::datatable()
-
-p <- d4p |> 
-  ggplot(aes(x = PCW, y = prop, fill = PhaseNew)) +
-  geom_col() +
-  scale_fill_manual(values = c('G0'='#984EA3','G1'='#1f77b4','S'='#ff7f0e','G2M'='#2ca02c')) +
-  labs(x = "PCW", y = "Proportion") +
   theme(panel.background = element_blank(),
         panel.border = element_rect(fill = NA, color = 'black', linewidth = 0.3),
         legend.key = element_rect(fill = NA,linewidth = 0.3)) +

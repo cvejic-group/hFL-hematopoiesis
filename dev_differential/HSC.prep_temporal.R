@@ -126,30 +126,6 @@ flag_rna <- gene_frac_expressed > 0.01
 qs::qsave(flag_rna, file = here::here("output", DOCNAME, "hsc_gene.flag_1_1.qs"))
 qs::qsave(gene_frac_expressed, file = here::here("output", DOCNAME, "hsc_gene_frac_expressed.qs"))
 
-
-# different filtering strategies for peaks
-# 1 count 1% single-cell (LMM RNA analysis, ~439 cells)
-peak_frac_expressed <- rowSums(pm > 0)/ncol(pm)
-qs::qsave(peak_frac_expressed, file = here::here("output", DOCNAME, "hsc_peak_frac_expressed.qs"))
-flag_1_1 <- peak_frac_expressed > 0.01
-sum(flag_1_1)
-sum(flag_1_1)/nrow(pm)
-peak_names <- rownames(pm)[flag_1_1]
-data.frame(peak_name = peak_names) |>
-  separate(peak_name, c("chrom", "left", "right")) |>
-  mutate(peak_name = peak_names) |>
-  write_tsv(file = here::here("output", DOCNAME, "hsc_peak.keep_1_1.bed"), col_names = FALSE)
-
-# 1 count 1000 single-cell (~2% cells)
-flag_1_1k <- rowSums(pm > 0) > 1000
-sum(flag_1_1k)
-sum(flag_1_1k)/nrow(pm)
-peak_names <- rownames(pm)[flag_1_1k]
-data.frame(peak_name = peak_names) |>
-  separate(peak_name, c("chrom", "left", "right")) |>
-  mutate(peak_name = peak_names) |>
-  write_tsv(file = here::here("output", DOCNAME, "hsc_peak.keep_1_1k.bed"), col_names = FALSE)
-
 # 1 count 5% single-cell (SCENT way, ~2196 cells)
 flag_1_5 <- peak_frac_expressed > 0.05
 sum(flag_1_5)
@@ -161,8 +137,6 @@ data.frame(peak_name = peak_names) |>
   write_tsv(file = here::here("output", DOCNAME, "hsc_peak.keep_1_5.bed"), col_names = FALSE)
 
 # save different filtering
-qs::qsave(flag_1_1, file = here::here("output", DOCNAME, "hsc_peak.flag_1_1.qs"))
-qs::qsave(flag_1_1k, file = here::here("output", DOCNAME, "hsc_peak.flag_1_1k.qs"))
 qs::qsave(flag_1_5, file = here::here("output", DOCNAME, "hsc_peak.flag_1_5.qs"))
 
 

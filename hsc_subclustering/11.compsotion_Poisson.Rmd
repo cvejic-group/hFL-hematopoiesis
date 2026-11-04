@@ -131,7 +131,7 @@ input_dbl <- .make_input_for_glmer(Y = Y, metadata_tbl = metadata, colSample = "
 head(input_dbl)
 ```
 
-## Library/Donor/Batch as random, Sex as fixed (model 4)
+## Library/Donor/Batch as random, Sex as fixed
 
 `Ncs ∼ PCW+Sex+(1∣Celltype)+(1∣Library)+(1∣Donor)+(1∣Batch)+(PCW−1∣Celltype)+(1∣Library:Celltype)+(1∣Donor:Celltype)+(1∣Batch)`
 
